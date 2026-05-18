@@ -1,5 +1,9 @@
 # tix
 
+[![PyPI](https://img.shields.io/pypi/v/tix-cli.svg)](https://pypi.org/project/tix-cli/)
+[![Python versions](https://img.shields.io/pypi/pyversions/tix-cli.svg)](https://pypi.org/project/tix-cli/)
+[![License](https://img.shields.io/pypi/l/tix-cli.svg)](https://github.com/gitpancake/tix/blob/main/LICENSE)
+
 Keyboard-driven terminal ticket explorer for a tree of markdown briefs. Linear-like TUI, zero deps beyond the Python stdlib + an optional markdown pager.
 
 ```
