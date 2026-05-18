@@ -78,11 +78,13 @@ three are derived from filesystem + git, two (`draft`, `cancelled`) are sticky u
   cancelled ticket whose branch still exists stays cancelled until reopened. Set/cleared
   from `tix` with `x`.
 
-`~/.claude/scripts/ticket-status-sync.py` is the **one and only writer** of `status:`.
-It recomputes every ticket on a full sweep (run by hand, or automatically when `tix`
-launches) and flips a single ticket to `active` on its fast path (run by `wt` on lane
-spawn). Do not edit `status:` by hand to "track progress" — the reconciler clobbers it on
-the next run, and that drift is exactly what killed the old `status:` field.
+`tix` itself is a **pure reader** — it never writes `status:`. If you want statuses to
+update from external signals (live worktrees, branches, merged PRs, etc.), wire your own
+reconciler via the `TIX_PRELOAD_HOOK` env var; it runs once before each TUI launch. A
+reference implementation lives in `gitpancake/.dotfiles` as
+`claude/scripts/ticket-status-sync.py` — derives `active` from worktrees and `done` from
+merged PRs. Editing `status:` by hand is fine; if you wire a reconciler, expect it to
+clobber drift on the next sweep.
 
 `priority` is **hand-driven**, unlike `status`. Buckets are `P0` (drop everything) → `P3`
 (eventually); blank = unprioritized and sorts last. Within each group `tix` sorts by

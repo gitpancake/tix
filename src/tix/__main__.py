@@ -1,9 +1,7 @@
 """tix CLI entry point.
 
-Subcommands:
   tix                browse $TICKETS_DIR (default ~/.claude/tickets)
   tix <project>      cd into ./<project>, set TICKETS_DIR=<project>/.claude/tickets
-  tix sync [slug]    reconcile `status:` frontmatter from filesystem + git + gh
 """
 import os
 import sys
@@ -12,11 +10,6 @@ from pathlib import Path
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-
-    if argv and argv[0] == "sync":
-        from . import sync
-        sys.argv = ["tix-sync", *argv[1:]]
-        return sync.main()
 
     if argv and not argv[0].startswith("-"):
         proj = argv.pop(0)

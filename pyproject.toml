@@ -27,7 +27,6 @@ dependencies = []
 
 [project.scripts]
 tix = "tix.__main__:main"
-tix-sync = "tix.sync:main"
 
 [project.urls]
 Homepage = "https://github.com/gitpancake/tix"

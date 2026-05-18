@@ -1146,19 +1146,21 @@ class App:
             self.rebuild_rows()
 
 
-def reconcile_status():
-    """Refresh every ticket's `status:` from filesystem + git before loading.
-    The TUI is a read-only view; sync.py is the one writer of `status:`, and
-    a tix launch is its full-sweep trigger. Best-effort — tix must still open
-    if sync errors. Output is captured: tix is about to take the screen with
-    curses, so the fresh statuses *are* the feedback, not the printed diff.
+def run_preload_hook():
+    """Run $TIX_PRELOAD_HOOK as a shell command before the TUI takes over.
 
-    Spawned as a subprocess (not in-process) so stdout/stderr stay off the
-    terminal that curses is about to claim."""
+    tix is a pure reader — it never writes `status:` frontmatter. Users who
+    want status auto-derived (from worktrees, branches, merged PRs, etc.)
+    point this env var at their own reconciler script. Output is captured:
+    tix is about to claim the terminal with curses, so any printed diff
+    would be wiped anyway. Best-effort — unset/missing/erroring hook never
+    blocks launch."""
+    hook = os.environ.get("TIX_PRELOAD_HOOK")
+    if not hook:
+        return
     try:
         subprocess.run(
-            [sys.executable, "-m", "tix.sync"],
-            capture_output=True, timeout=30,
+            hook, shell=True, capture_output=True, timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
         pass
@@ -1168,7 +1170,7 @@ def main():
     if not TICKETS_DIR.is_dir():
         print(f"tix: no ticket directory at {TICKETS_DIR}", file=sys.stderr)
         return 1
-    reconcile_status()
+    run_preload_hook()
     app = App()
     if not app.tickets:
         print(f"tix: no tickets found under {TICKETS_DIR}", file=sys.stderr)

@@ -12,9 +12,9 @@ LANES                         STATE              CTX
 ## Why
 
 - **The filesystem is the database.** A ticket *is* a markdown file. `grep`, `git log`, and `ls` all keep working.
-- **No SaaS, no auth, no network.** Runs entirely against a local tree. Optional `gh` for "merged → done" derivation.
+- **No SaaS, no auth, no network.** Runs entirely against a local tree.
 - **Linear-like keys.** `j/k`, `/` to filter, `Enter` to open, `p` to pick up into a `wt` lane.
-- **One writer.** Only `tix sync` writes the `status:` frontmatter. Everything else (TUI, hooks, lane spawns) is a reader.
+- **Pure reader.** tix never writes `status:` for you. If you want auto-status derivation, wire up your own preload hook (see below).
 
 ## Install
 
@@ -24,7 +24,7 @@ pipx install tix-cli
 pip install tix-cli
 ```
 
-That installs two console scripts: `tix` (the TUI) and `tix-sync` (the status reconciler).
+Installs one console script: `tix`.
 
 ### From source
 
@@ -69,7 +69,7 @@ TICKETS_DIR=./docs/tickets tix
 | `m` | Move ticket to area |
 | `y` | Copy slug to clipboard |
 | `o` | Open Linear URL (if `linear:` set) |
-| `r` | Reload + run `tix sync` |
+| `r` | Reload (re-runs preload hook if set) |
 | `?` | Help |
 | `q` | Quit |
 
@@ -105,39 +105,41 @@ Full contract: [`docs/ticket-schema.md`](docs/ticket-schema.md).
 | Env | Default | Purpose |
 |---|---|---|
 | `TICKETS_DIR` | `~/.claude/tickets` | Root of the ticket tree |
-| `ACTIVE_LANES_FILE` | `~/.claude/active-lanes.json` | Sidecar map: slug → active lane info, written by `tix sync` |
+| `ACTIVE_LANES_FILE` | `~/.claude/active-lanes.json` | Optional sidecar map: slug → `{path, branch, repo, last_commit}`. Read by the TUI; tix never writes it. |
 | `LINEAR_WORKSPACE` | *(unset)* | Slug used to derive `linear:` URLs (`o` key) |
+| `TIX_PRELOAD_HOOK` | *(unset)* | Shell command run before launch. See below. |
 | `EDITOR` | `vi` | Used by `e` |
 | `PAGER` | `less` | Fallback when `glow` is absent |
 
-## `tix sync` — the status writer
+`TICKETS_DIR` resolves in this order: explicit env var → `~/.claude/tickets`. There is no project-local autodiscovery; pass `tix <project>` or set `TICKETS_DIR` explicitly.
 
-`tix sync` is the **only** thing that writes the `status:` field. The TUI invokes it as a subprocess on launch. You can also call it directly:
+## Preload hook
+
+tix doesn't write `status:` — that's deliberate. If you want statuses derived from external signals (live worktrees, feature branches, merged PRs, calendar events, anything), put a script on disk and point at it:
 
 ```bash
-tix sync                  # full sweep: every ticket, all signals
-tix sync <slug>           # fast path: one ticket (skips `gh`)
+export TIX_PRELOAD_HOOK=~/bin/my-status-sync
+tix
 ```
 
-Derivation rules (in priority order):
+The hook runs once before the TUI is drawn. Its stdout/stderr are discarded — curses is about to claim the screen, so the *next render* is the feedback, not the printed diff. The hook is best-effort: a missing or failing command never blocks launch.
 
-1. **Sticky pins** set from the TUI (`i`, `d`, `x`) win over everything.
-2. **Active** ← a `wt` worktree or matching feature branch exists for the slug.
-3. **Done** ← `gh pr list --state merged` reports a merged PR whose title or branch contains the slug. Requires `gh` on PATH; otherwise this signal is skipped.
-4. Otherwise: keep the file's current status, or `open` if it has none.
+The `r` key in the TUI re-runs the hook and reloads.
+
+A reference implementation (filesystem + git + `gh`) lives in [gitpancake/.dotfiles](https://github.com/gitpancake/.dotfiles) as `claude/scripts/ticket-status-sync.py` — it derives `active` from live worktrees and `done` from merged PRs. Copy it, fork it, replace it.
 
 ## Optional integrations
 
 - **`wt`** — if a `wt` command is on PATH, the `p` key suspends curses, runs `git fetch && git checkout main && git merge --ff-only && wt <slug>`, then resumes.
-- **`gh`** — used by `tix sync` to derive "merged PR → done". Without it the rest of sync still runs; `done` is just never auto-set.
 - **`glow`** — preferred markdown pager for ticket preview. Falls back to `$PAGER` (default `less`).
+- **`gh`** — used by some preload hooks (not by tix itself).
 
 ## Non-goals
 
 - No remote sync, no auth, no web UI.
 - No mouse support.
 - No notifications.
-- No issue tracker integration beyond an optional `linear:` URL breadcrumb.
+- No bundled status reconciler — wire your own via `TIX_PRELOAD_HOOK`.
 
 ## License
 
