@@ -5,7 +5,7 @@ Keyboard-driven terminal ticket explorer for a tree of markdown briefs. Linear-l
 ```
 LANES                         STATE              CTX
 ◐ P1 teams-error-mapping      active              74K
-○ P0 shopify-variant-meta     open                —
+○ P0 oauth-rotation-plan      open                —
 ●    audit-logs-rollout       done                —
 ```
 
@@ -82,7 +82,7 @@ A ticket is a markdown file with YAML-ish line-based frontmatter:
 status: open
 priority: P1
 area: integrations
-linear: AE-1692
+linear: PROJ-123
 ---
 
 # teams-error-mapping
@@ -96,7 +96,7 @@ linear: AE-1692
 
 Full contract: [`docs/ticket-schema.md`](docs/ticket-schema.md).
 
-- **Filename is the slug.** `teams-error-mapping.md`, never `AE-1692.md`.
+- **Filename is the slug.** `teams-error-mapping.md`, never `PROJ-123.md`.
 - **Epic = folder.** A directory containing `_epic.md` is an epic; numbered children (`01-foo.md`, `02-bar.md`) are its stories.
 - **Status vocab is pinned:** `active`, `open`, `draft`, `done`, `cancelled`.
 

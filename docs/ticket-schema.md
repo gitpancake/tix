@@ -1,140 +1,124 @@
-# Ticket System — the contract
+# Ticket schema
 
-Tickets live here. **The filesystem is the database.** There is no external tracker —
-the brief file *is* the ticket.
-
-This file is the contract between humans and `wt` lanes. Read it before hand-editing
-anything under `~/.claude/tickets/`.
+The contract between tix and your ticket tree. Read this before hand-editing
+anything under `$TICKETS_DIR` (default `~/.claude/tickets`).
 
 ## The one rule
 
-**Filename is a descriptive slug. Never an ID.**
+**Filename is the slug.** A ticket file's stem *is* its identifier — never an
+external tracker ID, never an arbitrary number.
 
-`teams-error-mapping.md`, not `AE-1692.md`, not `DRAFT-7.md`. You can read a slug and
-know what the ticket is; `tix` and `ls` stay legible without opening files. The `linear:`
-frontmatter field is an optional historical breadcrumb — a cross-reference on tickets that
-predate the local-only move. New tickets leave it empty; nothing ever syncs.
+```
+good:  oauth-rotation-plan.md
+bad:   PROJ-123.md
+bad:   DRAFT-7.md
+```
+
+`tix` and `ls` stay legible without opening any file. External IDs go in the
+optional `linear:` frontmatter field as a historical breadcrumb; nothing ever
+syncs.
 
 ## Two kinds of thing
 
 | Kind | Lives at | Is |
 |---|---|---|
-| **Single ticket** | `<area>/<slug>.md` | one unit of change with acceptance criteria |
-| **Epic** | `<area>/<epic-slug>/` | a folder: `_epic.md` + ordered `NN-<child>.md` children |
+| **Single ticket** | `<area>/<slug>.md` | One unit of change with acceptance criteria. |
+| **Epic** | `<area>/<epic-slug>/` | A folder: `_epic.md` plus ordered `NN-<child>.md` children. |
 
-A ticket lives in its area from creation — there is no `_drafts/` staging folder. "Draft"
-is a *status*, not a location: a freshly-`/scope`d ticket is `status: draft` until it's
-refined or picked up.
+A ticket lives in its area from creation — there is no staging folder. "Draft"
+is a *status*, not a location: a freshly-scoped ticket is `status: draft` until
+it's refined or picked up.
 
-**Epic-ness is structural.** A folder containing an `_epic.md` *is* an epic. There is no
-registry — `find ~/.claude/tickets -name _epic.md` is the epic index, and it is never
-stale. (The old `.epics.json` is dead.)
+**Epic-ness is structural.** A directory containing `_epic.md` *is* an epic.
+There is no separate registry — `find $TICKETS_DIR -name _epic.md` is the
+epic index, and it is never stale.
 
 ## Areas
 
-The root is a small, fixed set of area buckets — this is what keeps the tree browsable
-instead of sprawling into one folder per epic. Current set:
+The root is a small, fixed set of area buckets. This is what keeps the tree
+browsable instead of sprawling into one folder per epic.
 
-- `integrations/` — vendor adapters, L3 work, webhooks, channel plumbing
-- `platform/` — shared services, visibility, core infra-facing work
-- `ops/` — consolidations, cleanups, eng-ops, migrations
-- `tooling/` — the cockpit, `wt`/`ralph`/`tix`, this ticket system itself
-- `spikes/` — exploratory, time-boxed, may never ship
+The default areas baked into `tix` are:
 
-Edit this list deliberately. If you reach for a sixth bucket, ask whether it's really an
+- `integrations/`
+- `ops/`
+- `platform/`
+- `spikes/`
+- `tooling/`
+
+These names are intentionally generic. Pick whatever set suits your project — a
+future release will make `AREAS` configurable via env or a config file. For now
+edit `src/tix/tui.py`'s `AREAS` list if you fork.
+
+Add buckets deliberately. If you reach for a sixth, ask whether it's really an
 area or just an epic that belongs inside an existing one.
 
 ## Frontmatter
 
 ```yaml
 ---
-linear:                       # optional historical breadcrumb; empty on new tickets
-title: <≤80 chars, action-oriented>
-status: draft                 # draft | open | active | done — a CACHE, not hand-edited
-priority:                     # optional: P0 | P1 | P2 | P3 — blank = unprioritized
-epic:                         # parent epic folder slug, or empty
-area: integrations            # one of the buckets above
-labels: []
-created: <ISO-8601>
+status: open               # active | open | draft | done | cancelled
+priority: P1               # P0 | P1 | P2 | P3 (blank = unprioritized)
+area: integrations         # one of the configured areas
+linear: PROJ-123           # optional external-tracker breadcrumb
+parent: <epic-slug>        # only on epic children
 ---
 ```
 
-**Stored:** `linear`, `title`, `priority`, `epic`, `area`, `labels`, `created`.
-**Derived — do not store:** the slug (it's the filename), the Linear URL (built from
-`linear:`), whether the ticket is in flight (a worktree/branch exists for it).
+The parser is intentionally line-based — no PyYAML, no nesting. Keep each value
+on a single line.
 
-`status` is a **cache**, not a workflow you hand-drive. Local lifecycle is five states;
-three are derived from filesystem + git, two (`draft`, `cancelled`) are sticky user intent:
+### Status vocab
 
-- `draft` — created, not yet refined or picked up. The *sticky seed*: nothing on disk
-  distinguishes a draft from an open ticket, so the reconciler never *produces* `draft` —
-  `/scope` plants it and it is preserved until a live lane appears.
-- `open` — refined, ready, no active lane
-- `active` — a live worktree or branch exists for the slug
-- `done` — a PR for the ticket's branch was merged **or** the user pinned it from `tix`
-  with `d`. Sticky: a manual mark survives reconciliation so spikes/ops/research tickets
-  without a PR signal can still be closed out.
-- `cancelled` — user dropped the ticket. **Terminal**, trumps every derived signal — a
-  cancelled ticket whose branch still exists stays cancelled until reopened. Set/cleared
-  from `tix` with `x`.
+- `draft` — scoped, not yet refined. The cheapest possible "I might want this."
+- `open` — refined and ready to be picked up. Default for new well-formed tickets.
+- `active` — being worked. A reconciler can derive this from live worktrees or
+  branches; you can also pin it manually with `tix`'s `i` key.
+- `done` — shipped. A reconciler can derive it from merged PRs containing the
+  slug; you can also pin it with `d`. Sticky: a manual mark survives the next
+  reconciliation pass so research/ops tickets without a PR signal can still
+  close out.
+- `cancelled` — dropped. **Terminal** — trumps every derived signal until you
+  reopen it. Set/cleared with `x`.
 
-`tix` itself is a **pure reader** — it never writes `status:`. If you want statuses to
-update from external signals (live worktrees, branches, merged PRs, etc.), wire your own
-reconciler via the `TIX_PRELOAD_HOOK` env var; it runs once before each TUI launch. A
-reference implementation lives in `gitpancake/.dotfiles` as
-`claude/scripts/ticket-status-sync.py` — derives `active` from worktrees and `done` from
-merged PRs. Editing `status:` by hand is fine; if you wire a reconciler, expect it to
-clobber drift on the next sweep.
+`tix` itself is a **pure reader** — it never writes `status:` for you. If you
+want statuses derived from external signals, wire your own reconciler via the
+`TIX_PRELOAD_HOOK` env var; it runs once before each TUI launch. A reference
+implementation (filesystem + git + `gh`) lives in
+[gitpancake/.dotfiles](https://github.com/gitpancake/.dotfiles) as
+`claude/scripts/ticket-status-sync.py` — derives `active` from worktrees and
+`done` from merged PRs. Fork, replace, or skip entirely.
 
-`priority` is **hand-driven**, unlike `status`. Buckets are `P0` (drop everything) → `P3`
-(eventually); blank = unprioritized and sorts last. Within each group `tix` sorts by
-priority then status, so P0/P1 work bubbles to the top. Bump from `tix` with `+`/`−`, or
-edit the frontmatter directly. The reconciler never touches this field.
+### Priority
+
+Hand-driven, unlike status. Buckets are `P0` (drop everything) → `P3`
+(eventually); blank sorts last. Within each group `tix` sorts by priority then
+status, so P0/P1 work bubbles to the top. Edit the frontmatter directly or use
+`+`/`−` from the TUI.
 
 ## Epic shape
 
 ```
 <area>/<epic-slug>/
-  _epic.md                 # the durable, Ralph-ready PRD. tix renders it; Ralph reads it.
-  01-<child-slug>.md       # ordered deep-context — the expansion Ralph opens per story
+  _epic.md                # the durable, expansive brief
+  01-<child-slug>.md      # ordered child stories
   02-<child-slug>.md
 ```
 
-- **`_epic.md` is the source of truth.** It carries context, goal, epic-level acceptance
-  criteria, constraints, and — in the `<!-- epic-stories:start -->` block — the
-  authoritative ordered story list plus dependency DAG. A human reviews and confirms this
-  block before any lane spawns. Ralph never decomposes; it executes a confirmed list.
-- **`NN-<child>.md` children are context, not the primary input.** Each is the deep
-  per-story detail Ralph opens when it picks that story. The `NN-` prefix encodes
-  execution order so `ls` and `tix` show the sequence.
-- **`prd.json` is generated, never authored.** At lane-spawn, `epic-parse.sh` projects the
-  `epic-stories` block in `_epic.md` into `scripts/ralph/prd.json` *inside the worktree*.
-  It never lives in the tickets tree. `_epic.md` changes → re-project; the markdown is
-  always the truth.
+- **`_epic.md`** carries context, goal, epic-level acceptance criteria,
+  constraints, and an ordered story list.
+- **`NN-<child>.md` children** are the deep per-story detail. The `NN-` prefix
+  encodes execution order so `ls` and `tix` show the sequence.
 
-## Picking up
+## Slug conventions
 
-`wt <arg>` and `/pickup <arg>` resolve `<arg>`, in order:
+Use a descriptive, kebab-cased phrase. Short enough to type, long enough to
+read at a glance. Avoid encoding state in the name — that's what `status:` is
+for.
 
-1. frontmatter `linear:` match (a real Linear ID)
-2. filename slug match
-3. epic folder name match
-
-So `wt teams-error-mapping`, `wt AE-1692`, and `wt teams-l3-adapter` all work.
-
-## Conventions
-
-- **Tombstone** — a file whose only content is `moved -> <path>` is a redirect left behind
-  when a ticket was relocated. Readers follow it; `/epic` skips it.
-- **`_` prefix** — meta/generated, not a real ticket: `_epic.md`, `_TEMPLATE.md`,
-  `_EPIC-TEMPLATE.md`, `_CHILD-TEMPLATE.md`.
-- **Moving a ticket** — misfiled? `git mv` it to the right `<area>/`. The slug is stable,
-  so `wt` resolves it wherever it lands.
-
-## Templates
-
-- `_TEMPLATE.md` — single ticket
-- `_EPIC-TEMPLATE.md` — epic root (`_epic.md`)
-- `_CHILD-TEMPLATE.md` — epic child (`NN-<slug>.md`)
-
-Copy them. Do not freehand the frontmatter.
+```
+good:  oauth-rotation-plan
+good:  webhook-replay-on-failure
+bad:   fix-the-thing
+bad:   work-in-progress-stuff
+```

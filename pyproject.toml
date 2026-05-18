@@ -30,7 +30,9 @@ tix = "tix.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/gitpancake/tix"
+Repository = "https://github.com/gitpancake/tix"
 Issues = "https://github.com/gitpancake/tix/issues"
+Changelog = "https://github.com/gitpancake/tix/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tix"]

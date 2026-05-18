@@ -831,11 +831,11 @@ class App:
 
     # ---- ticket actions ----------------------------------------------
     def pickup_ticket(self, stdscr, ticket):
-        """Always foreground-suspend for pickup. Mirrors `/pickup <slug> main`:
-        sync the cockpit to main, then hand off to `wt`. `wt` itself spawns the
-        lane into its own tmux window per WT_LAYOUT and returns — wrapping that
-        in our own `tmux new-window` would add a flash window before wt's real
-        one."""
+        """Foreground-suspend curses and hand off to `wt`. The flow mirrors a
+        manual pickup: fetch + check out main + fast-forward + spawn lane.
+        `wt` itself opens the lane in its own tmux window per WT_LAYOUT and
+        returns — wrapping that in our own `tmux new-window` would flash an
+        extra window before wt's real one."""
         wt = shutil.which("wt") or "wt"
         curses.def_prog_mode()
         curses.endwin()
@@ -847,7 +847,7 @@ class App:
                 capture_output=True, text=True,
             )
             if in_repo.returncode != 0:
-                print("tix: cwd is not a git repo — run tix from the cockpit.")
+                print("tix: cwd is not a git repo — run tix from a repo root.")
                 input("press enter to return…")
             else:
                 # /pickup-style base sync: fetch + checkout main + ff merge.
