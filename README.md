@@ -50,9 +50,27 @@ tix
 Or point at a project tree:
 
 ```bash
-cd ~/code
-tix my-project           # browses ~/code/my-project/.claude/tickets
+tix my-project           # browses ~/.claude/tickets/my-project (centralized)
+                         # falls back to ./my-project/.claude/tickets (legacy)
 TICKETS_DIR=./docs/tickets tix
+```
+
+For zsh users who want per-project `TICKETS_DIR` to follow `cd`, add this `chpwd` hook to `~/.zshrc`:
+
+```zsh
+autoload -U add-zsh-hook
+_tix_tickets_dir() {
+  local root base
+  root=$(git rev-parse --show-toplevel 2>/dev/null) || { unset TICKETS_DIR; return; }
+  base=${root:t}
+  if [[ -d "$HOME/.claude/tickets/$base" ]]; then
+    export TICKETS_DIR="$HOME/.claude/tickets/$base"
+  else
+    unset TICKETS_DIR
+  fi
+}
+add-zsh-hook chpwd _tix_tickets_dir
+_tix_tickets_dir
 ```
 
 ## Keys
@@ -115,7 +133,7 @@ Full contract: [`docs/ticket-schema.md`](docs/ticket-schema.md).
 | `EDITOR` | `vi` | Used by `e` |
 | `PAGER` | `less` | Fallback when `glow` is absent |
 
-`TICKETS_DIR` resolves in this order: explicit env var → `~/.claude/tickets`. There is no project-local autodiscovery; pass `tix <project>` or set `TICKETS_DIR` explicitly.
+`TICKETS_DIR` resolves in this order: explicit env var → `~/.claude/tickets`. There is no in-binary project-local autodiscovery; pass `tix <project>` (resolves `~/.claude/tickets/<project>/` first, then `./<project>/.claude/tickets/` for legacy trees) or set `TICKETS_DIR` explicitly (e.g. via the `chpwd` hook above).
 
 ## Preload hook
 

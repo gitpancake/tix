@@ -1,7 +1,8 @@
 """tix CLI entry point.
 
   tix                browse $TICKETS_DIR (default ~/.claude/tickets)
-  tix <project>      cd into ./<project>, set TICKETS_DIR=<project>/.claude/tickets
+  tix <project>      browse ~/.claude/tickets/<project>/ (centralized layout).
+                     Legacy fallback: ./<project>/.claude/tickets/
 """
 import os
 import sys
@@ -13,12 +14,20 @@ def main(argv=None):
 
     if argv and not argv[0].startswith("-"):
         proj = argv.pop(0)
-        proj_dir = Path.cwd() / proj
-        if not proj_dir.is_dir():
-            print(f"tix: no project directory at {proj_dir}", file=sys.stderr)
-            return 1
-        os.chdir(proj_dir)
-        os.environ["TICKETS_DIR"] = str(proj_dir / ".claude" / "tickets")
+        home_proj = Path.home() / ".claude" / "tickets" / proj
+        if home_proj.is_dir():
+            os.environ["TICKETS_DIR"] = str(home_proj)
+        else:
+            legacy = Path.cwd() / proj / ".claude" / "tickets"
+            if legacy.is_dir():
+                os.chdir(Path.cwd() / proj)
+                os.environ["TICKETS_DIR"] = str(legacy)
+            else:
+                print(
+                    f"tix: no ticket directory at {home_proj} (or {legacy})",
+                    file=sys.stderr,
+                )
+                return 1
 
     from . import tui
     sys.argv = ["tix", *argv]

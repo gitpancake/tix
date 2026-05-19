@@ -5,7 +5,7 @@
 `tix` is a keyboard-driven curses TUI over a tree of markdown ticket briefs. Stdlib-only Python. Single surface:
 
 - `src/tix/tui.py` — curses reader. Renders, filters, navigates, pickups.
-- `src/tix/__main__.py` — CLI router (default → TUI; `tix <project>` → cd-and-set-TICKETS_DIR).
+- `src/tix/__main__.py` — CLI router (default → TUI; `tix <project>` → resolve `~/.claude/tickets/<project>/`, fallback `./<project>/.claude/tickets/`; sets `TICKETS_DIR` before the TUI imports).
 
 **tix is a pure reader.** It does not write `status:` frontmatter. Users who want status auto-derived wire up their own script via `TIX_PRELOAD_HOOK`. That contract is load-bearing — do not bundle a reconciler.
 
@@ -27,7 +27,14 @@ Pre-migration title-case variants (`In Progress`, `Todo`, etc.) are kept as read
 
 ## TICKETS_DIR resolution
 
-Order: `$TICKETS_DIR` (explicit) → `~/.claude/tickets` (fallback). No project-local autodiscovery. The `tix <project>` form is sugar that does `chdir` + sets `TICKETS_DIR` to `<project>/.claude/tickets` before the TUI imports.
+Order: `$TICKETS_DIR` (explicit) → `~/.claude/tickets` (fallback). No in-binary project autodiscovery from cwd.
+
+The `tix <project>` form sets `TICKETS_DIR` via:
+1. `~/.claude/tickets/<project>/` if that dir exists (centralized layout — preferred)
+2. else `./<project>/.claude/tickets/` if that dir exists (legacy per-repo layout — `chdir` into `./<project>` before launch)
+3. else error
+
+Per-project autoswitch on `cd` lives in the user's shell, not tix. The README documents a zsh `chpwd` hook recipe for the centralized layout.
 
 ## Preload hook
 
