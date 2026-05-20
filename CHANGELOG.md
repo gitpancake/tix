@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-05-20
+
+### Added
+- `tix <project>` now **chdirs into the project's git repo** (under
+  `$TIX_CODE_DIR`, default `~/Documents/code`) so the pickup key (`p` → `wt`)
+  runs against the right repo. Previously the centralized layout never
+  chdir'd and pickup silently no-op'd outside a repo root.
+- `TIX_CODE_DIR` env var — overrides the code-repo lookup root.
+- Brief-tree precedence extended: centralized `~/.claude/tickets/<proj>` →
+  repo-local `$TIX_CODE_DIR/<proj>/.claude/tickets` → cwd-legacy
+  `./<proj>/.claude/tickets`.
+
+### Changed
+- Pickup (`p`) marks the ticket `active` immediately rather than waiting for
+  the reconciler, forces `WT_NO_WATCH=1` for a single-pane lane, and
+  rebuilds/reselects the row on return.
+
 ## [0.1.0] — 2026-05-18
 
 Initial public release.
