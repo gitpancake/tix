@@ -51,7 +51,9 @@ Or point at a project tree:
 
 ```bash
 tix my-project           # browses ~/.claude/tickets/my-project (centralized)
-                         # falls back to ./my-project/.claude/tickets (legacy)
+                         # and chdirs into ~/Documents/code/my-project so
+                         # pickup (p) runs against the right repo
+TIX_CODE_DIR=~/src tix my-project   # override the code-repo lookup root
 TICKETS_DIR=./docs/tickets tix
 ```
 
@@ -127,13 +129,14 @@ Full contract: [`docs/ticket-schema.md`](docs/ticket-schema.md).
 | Env | Default | Purpose |
 |---|---|---|
 | `TICKETS_DIR` | `~/.claude/tickets` | Root of the ticket tree |
+| `TIX_CODE_DIR` | `~/Documents/code` | Lookup root for `tix <project>` — the repo it chdirs into so pickup works |
 | `ACTIVE_LANES_FILE` | `~/.claude/active-lanes.json` | Optional sidecar map: slug → `{path, branch, repo, last_commit}`. Read by the TUI; tix never writes it. |
 | `LINEAR_WORKSPACE` | *(unset)* | Slug used to derive `linear:` URLs (`o` key) |
 | `TIX_PRELOAD_HOOK` | *(unset)* | Shell command run before launch. See below. |
 | `EDITOR` | `vi` | Used by `e` |
 | `PAGER` | `less` | Fallback when `glow` is absent |
 
-`TICKETS_DIR` resolves in this order: explicit env var → `~/.claude/tickets`. There is no in-binary project-local autodiscovery; pass `tix <project>` (resolves `~/.claude/tickets/<project>/` first, then `./<project>/.claude/tickets/` for legacy trees) or set `TICKETS_DIR` explicitly (e.g. via the `chpwd` hook above).
+`TICKETS_DIR` resolves in this order: explicit env var → `~/.claude/tickets`. There is no in-binary project-local autodiscovery from a bare `cd`. Instead, `tix <project>` resolves the brief tree (centralized `~/.claude/tickets/<project>/` first, then `$TIX_CODE_DIR/<project>/.claude/tickets/`, then `./<project>/.claude/tickets/` for legacy trees) **and** chdirs into the project's git repo under `$TIX_CODE_DIR` (default `~/Documents/code`) so the pickup key (`p`) runs `wt` against the right repo. Or set `TICKETS_DIR` explicitly (e.g. via the `chpwd` hook above).
 
 ## Preload hook
 

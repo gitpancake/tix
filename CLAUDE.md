@@ -11,7 +11,7 @@
 
 ## Invariants
 
-1. **No status writes from tix.** `i`/`d`/`x` sticky pins are the only mutation path, and even those just edit the ticket file's frontmatter directly — they never derive state from external signals.
+1. **No *derived* status writes from tix.** The only frontmatter mutations are direct user actions: `i`/`d`/`x` sticky pins and `p` pickup (writes `active`). None of these derive state from external signals — that stays the reconciler's job (`TIX_PRELOAD_HOOK`). Don't add filesystem/git inspection to tix's write paths.
 2. **Stdlib-only.** No PyYAML, no `rich`, no `prompt_toolkit`. Adds startup latency we don't accept. Frontmatter parser is intentionally line-based; preserve that contract.
 3. **Filename = slug.** Never derive a slug from frontmatter `id:` or filename munging. `path.stem` is authoritative.
 4. **Filesystem = DB.** No `.tix-cache`, no SQLite. `ACTIVE_LANES_FILE` is an *optional read-only* sidecar — tix consumes it if present (a preload hook might populate it) but never writes it itself.
@@ -29,10 +29,15 @@ Pre-migration title-case variants (`In Progress`, `Todo`, etc.) are kept as read
 
 Order: `$TICKETS_DIR` (explicit) → `~/.claude/tickets` (fallback). No in-binary project autodiscovery from cwd.
 
-The `tix <project>` form sets `TICKETS_DIR` via:
-1. `~/.claude/tickets/<project>/` if that dir exists (centralized layout — preferred)
-2. else `./<project>/.claude/tickets/` if that dir exists (legacy per-repo layout — `chdir` into `./<project>` before launch)
-3. else error
+The `tix <project>` form (`resolve_project` in `__main__.py`) does two things:
+
+**Picks the brief tree** (sets `TICKETS_DIR`):
+1. `~/.claude/tickets/<project>/` if it exists (centralized — preferred)
+2. else `$TIX_CODE_DIR/<project>/.claude/tickets/` (repo-local)
+3. else `./<project>/.claude/tickets/` (cwd-relative legacy)
+4. else error
+
+**chdirs into the project's git repo** so pickup (`p` → `wt`) operates on the right repo — wt fails silently when cwd isn't a repo root. Lookup root is `$TIX_CODE_DIR` (default `~/Documents/code`); falls back to a cwd-relative `./<project>` repo for the legacy layout. The chdir is independent of which brief tree was chosen — centralized tickets + chdir into the code repo is the common case.
 
 Per-project autoswitch on `cd` lives in the user's shell, not tix. The README documents a zsh `chpwd` hook recipe for the centralized layout.
 

@@ -89,7 +89,7 @@ FILTER + SEARCH
   /                start text search (esc to cancel, ⏎ to commit)
 
 TICKET ACTIONS
-  p              pickup → wt <slug> (suspend curses, run, return)
+  p              pickup → mark active + wt <slug> (suspend curses, run, return)
   e              edit brief in $EDITOR; reload after
   R              rescope → $EDITOR scratch → claude "/rescope <slug> <text>"
   n              new ticket → $EDITOR scratch → claude "/scope <text>"
@@ -850,17 +850,31 @@ class App:
                 print("tix: cwd is not a git repo — run tix from a repo root.")
                 input("press enter to return…")
             else:
+                # Mark in-progress up front so the brief reflects the pickup
+                # immediately. The reconciler keeps deriving `active` from the
+                # live lane after this, but we don't wait for it to run.
+                write_status(ticket.path, "active")
+                ticket.status = "active"
                 # /pickup-style base sync: fetch + checkout main + ff merge.
                 # Each step is best-effort; wt still runs even on partial sync
                 # so a transient fetch failure doesn't block the lane.
                 subprocess.run(["git", "fetch", "--quiet", "origin"])
                 subprocess.run(["git", "checkout", "main"])
                 subprocess.run(["git", "merge", "--ff-only", "origin/main"])
-                subprocess.run([wt, ticket.slug])
+                # Default pickups to a single pane (no auto lane-watch monitor
+                # split). Respect an explicit ambient WT_NO_WATCH if the user
+                # set one — otherwise force "1" so a stale shell that never
+                # exported it still gets the one-pane layout.
+                wt_env = {**os.environ,
+                          "WT_NO_WATCH": os.environ.get("WT_NO_WATCH", "1")}
+                subprocess.run([wt, ticket.slug], env=wt_env)
         except OSError:
             pass
         curses.reset_prog_mode()
         stdscr.refresh()
+        path = ticket.path
+        self.rebuild()
+        self.reselect_path(path)
 
     def edit_brief(self, stdscr, ticket):
         editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "vi"

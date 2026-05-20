@@ -1,5 +1,6 @@
 """Smoke tests — no curses, no network. Verify the package imports and the
 core data shapes load from a fixture tree."""
+import os
 import sys
 from pathlib import Path
 
@@ -48,3 +49,32 @@ def test_status_vocab_pinned():
     canonical = {"active", "open", "draft", "done", "cancelled", "canceled"}
     keys = set(tui.STATUS_META.keys())
     assert canonical <= keys, "status vocab regressed"
+
+
+def test_resolve_project_chdirs_into_code_repo(monkeypatch, tmp_path):
+    """`tix <project>` points TICKETS_DIR at the centralized tree and chdirs
+    into the code repo under $TIX_CODE_DIR so pickup runs against it."""
+    home = tmp_path / "home"
+    central = home / ".claude" / "tickets" / "proj"
+    central.mkdir(parents=True)
+    code_repo = tmp_path / "code" / "proj"
+    (code_repo / ".git").mkdir(parents=True)
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("TIX_CODE_DIR", str(tmp_path / "code"))
+    monkeypatch.delenv("TICKETS_DIR", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    from tix.__main__ import resolve_project
+    assert resolve_project("proj") is True
+    assert os.environ["TICKETS_DIR"] == str(central)
+    assert Path.cwd() == code_repo
+
+
+def test_resolve_project_missing_returns_false(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TIX_CODE_DIR", str(tmp_path / "code"))
+    monkeypatch.chdir(tmp_path)
+    from tix.__main__ import resolve_project
+    assert resolve_project("nope") is False
+    assert "no ticket directory" in capsys.readouterr().err
