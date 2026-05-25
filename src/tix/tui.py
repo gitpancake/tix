@@ -24,6 +24,15 @@ LANES_FILE = Path(os.environ.get("ACTIVE_LANES_FILE",
 # Set LINEAR_WORKSPACE in the environment; unset → no derived URL.
 LINEAR_WORKSPACE = os.environ.get("LINEAR_WORKSPACE", "")
 
+
+def claude_argv(prompt):
+    """Build the argv for an interactive claude dispatch (rescope/scope/new).
+    Mirrors `wt`'s lane launch so these match pickup permission-wise: bypass
+    the permission prompt. WT_CLAUDE overrides the binary+flags (same env var
+    wt honors); default is `claude --dangerously-skip-permissions`."""
+    base = os.environ.get("WT_CLAUDE", "claude --dangerously-skip-permissions")
+    return [*shlex.split(base), prompt]
+
 # Files under TICKETS_DIR that are not tickets — skipped by the loader.
 META_FILES = {"README.md", "_TEMPLATE.md", "_EPIC-TEMPLATE.md", "_CHILD-TEMPLATE.md"}
 
@@ -89,7 +98,8 @@ FILTER + SEARCH
   /                start text search (esc to cancel, ⏎ to commit)
 
 TICKET ACTIONS
-  p              pickup → mark active + wt <slug> (suspend curses, run, return)
+  p              pickup → mark active + wt <slug>; epic → wt --ralph <slug>
+                 (suspend curses, run, return)
   e              edit brief in $EDITOR; reload after
   R              rescope → $EDITOR scratch → claude "/rescope <slug> <text>"
   n              new ticket → $EDITOR scratch → claude "/scope <text>"
@@ -513,7 +523,8 @@ class App:
         y += 1
         # Pickup slug — exact arg for `wt`/`/pickup`. Surfaces what `p` will run.
         if y - y0 < h:
-            self._put(stdscr, y, x0, f"pickup: {t.slug}"[:w],
+            pickup_cmd = f"wt --ralph {t.slug}" if t.is_epic else f"wt {t.slug}"
+            self._put(stdscr, y, x0, f"pickup: {pickup_cmd}"[:w],
                       self.attr("accent", curses.A_DIM), maxx=x0 + w)
             y += 1
         meta_bits = [b for b in (t.area, t.status, t.priority) if b]
@@ -835,7 +846,12 @@ class App:
         manual pickup: fetch + check out main + fast-forward + spawn lane.
         `wt` itself opens the lane in its own tmux window per WT_LAYOUT and
         returns — wrapping that in our own `tmux new-window` would flash an
-        extra window before wt's real one."""
+        extra window before wt's real one.
+
+        Epics (a folder with `_epic.md`) hand off via `wt --ralph` so the lane
+        runs the Ralph loop (epic-parse → ralph.sh, one story per iteration)
+        instead of degrading to a single lane that reads `_epic.md` as a flat
+        brief. Story order is the confirmed `epic-stories` block in `_epic.md`."""
         wt = shutil.which("wt") or "wt"
         curses.def_prog_mode()
         curses.endwin()
@@ -867,7 +883,9 @@ class App:
                 # exported it still gets the one-pane layout.
                 wt_env = {**os.environ,
                           "WT_NO_WATCH": os.environ.get("WT_NO_WATCH", "1")}
-                subprocess.run([wt, ticket.slug], env=wt_env)
+                wt_cmd = ([wt, "--ralph", ticket.slug] if ticket.is_epic
+                          else [wt, ticket.slug])
+                subprocess.run(wt_cmd, env=wt_env)
         except OSError:
             pass
         curses.reset_prog_mode()
@@ -896,7 +914,7 @@ class App:
         if not text:
             return
         prompt = f"/rescope {ticket.slug} {text}"
-        self.run_external(stdscr, ["claude", prompt], name=f"rescope:{ticket.slug[:10]}")
+        self.run_external(stdscr, claude_argv(prompt), name=f"rescope:{ticket.slug[:10]}")
 
     def new_ticket(self, stdscr, seed=""):
         if not seed:
@@ -907,7 +925,7 @@ class App:
         if not text:
             return
         prompt = f"/scope {text}"
-        self.run_external(stdscr, ["claude", prompt], name="scope")
+        self.run_external(stdscr, claude_argv(prompt), name="scope")
 
     def new_from_clipboard(self, stdscr):
         clip = ""

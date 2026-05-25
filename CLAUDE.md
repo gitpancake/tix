@@ -15,6 +15,7 @@
 2. **Stdlib-only.** No PyYAML, no `rich`, no `prompt_toolkit`. Adds startup latency we don't accept. Frontmatter parser is intentionally line-based; preserve that contract.
 3. **Filename = slug.** Never derive a slug from frontmatter `id:` or filename munging. `path.stem` is authoritative.
 4. **Filesystem = DB.** No `.tix-cache`, no SQLite. `ACTIVE_LANES_FILE` is an *optional read-only* sidecar — tix consumes it if present (a preload hook might populate it) but never writes it itself.
+5. **Claude dispatch goes through `claude_argv()`.** `R` rescope / `n`,`N` new all hand off to interactive claude via `claude_argv(prompt)`, which defaults to `claude --dangerously-skip-permissions` (parity with `p` pickup, whose `wt` lane runs the same bypass). `WT_CLAUDE` overrides binary+flags — same env var `wt` honors. Don't reintroduce a bare `["claude", prompt]`: it drops the user into a permission-prompting session, breaking parity with pickup.
 
 ## Status vocab (pinned)
 
