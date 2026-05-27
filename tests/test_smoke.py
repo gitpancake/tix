@@ -78,3 +78,10 @@ def test_resolve_project_missing_returns_false(monkeypatch, tmp_path, capsys):
     from tix.__main__ import resolve_project
     assert resolve_project("nope") is False
     assert "no ticket directory" in capsys.readouterr().err
+
+
+def test_pager_and_pickup_helpers_exposed():
+    """Mini imports these — they must live at module scope, not on App."""
+    from tix import tui
+    assert callable(getattr(tui, "open_in_pager", None))
+    assert callable(getattr(tui, "pickup_ticket", None))
