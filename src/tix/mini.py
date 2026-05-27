@@ -26,19 +26,33 @@ from .tui import (
 # Statuses hidden from mini's flat list — done + every cancelled alias.
 _HIDDEN = {s.lower() for s in CANCELLED_STATUSES} | {"done"}
 
+# Mini-local status ordering: active → draft → open. Diverges from tui's
+# STATUS_META rank (which puts open ahead of draft) — drafts are unstarted
+# work the user owns, open are unclaimed; mini surfaces ownership first.
+# Title-case aliases map to their lowercase equivalents.
+_MINI_RANK = {
+    "active": 0,
+    "draft": 1,
+    "open": 2,
+    "In Progress": 0,
+    "Backlog": 1,
+    "Todo": 2,
+    "In Review": 2,
+}
+
 
 def build_rows(tickets):
     """Filter + sort tickets for mini's flat list.
 
     Hides done/cancelled (case-insensitive — pre-migration title-case
-    `Done`/`Canceled` also drop). Sort: STATUS_META rank asc (active first),
-    then `created` desc; ties broken by id. Missing `created` (0.0) sinks
-    via -created negation."""
+    `Done`/`Canceled` also drop). Sort: mini rank asc (active → draft →
+    open), then `created` desc; ties broken by id. Missing `created` (0.0)
+    sinks via -created negation."""
     keep = [t for t in tickets if t.status.lower() not in _HIDDEN]
     return sorted(
         keep,
         key=lambda t: (
-            STATUS_META.get(t.status, DEFAULT_STATUS_META)[2],
+            _MINI_RANK.get(t.status, 9),
             -t.created,
             t.id,
         ),

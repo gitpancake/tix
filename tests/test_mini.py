@@ -63,6 +63,38 @@ def test_build_rows_hides_done_and_cancelled(monkeypatch, tmp_path):
     assert slugs == {"open", "draft", "active"}
 
 
+def test_build_rows_orders_active_draft_open(monkeypatch, tmp_path):
+    """Mini's status grouping: active → draft → open. Diverges from tui's
+    STATUS_META rank (which puts open before draft). Within each group,
+    created desc."""
+    tree = tmp_path / "tickets"
+    (tree / "area").mkdir(parents=True)
+    cases = [
+        ("open-new",   "open",   "2026-05-02T00:00:00Z"),
+        ("open-old",   "open",   "2026-01-01T00:00:00Z"),
+        ("draft-new",  "draft",  "2026-05-02T00:00:00Z"),
+        ("draft-old",  "draft",  "2026-01-01T00:00:00Z"),
+        ("active-new", "active", "2026-05-02T00:00:00Z"),
+        ("active-old", "active", "2026-01-01T00:00:00Z"),
+    ]
+    for slug, status, created in cases:
+        (tree / "area" / f"{slug}.md").write_text(
+            f"---\nstatus: {status}\ncreated: {created}\n---\n# {slug}\n",
+            encoding="utf-8",
+        )
+    monkeypatch.setenv("TICKETS_DIR", str(tree))
+    for mod in ("tix.mini", "tix.tui", "tix"):
+        sys.modules.pop(mod, None)
+
+    from tix import mini, tui
+    rows = mini.build_rows(tui.load_tickets())
+    assert [t.slug for t in rows] == [
+        "active-new", "active-old",
+        "draft-new", "draft-old",
+        "open-new", "open-old",
+    ]
+
+
 def test_build_rows_filters_case_insensitive(monkeypatch, tmp_path):
     """Pre-migration title-case statuses (Done, Canceled) must also hide."""
     tree = tmp_path / "tickets"
