@@ -12,6 +12,7 @@ import sys
 
 from .tui import (
     CANCELLED_STATUSES,
+    DEFAULT_STATUS_META,
     STATUS_META,
     TICKETS_DIR,
     load_tickets,
@@ -29,18 +30,52 @@ def build_rows(tickets):
     """Filter + sort tickets for mini's flat list.
 
     Hides done/cancelled (case-insensitive — pre-migration title-case
-    `Done`/`Canceled` also drop). Sort: `created` desc; ties broken by id.
-    Missing `created` (0.0) sinks via -created negation (parity with
-    tui.App.sort_within_group `created` mode)."""
+    `Done`/`Canceled` also drop). Sort: STATUS_META rank asc (active first),
+    then `created` desc; ties broken by id. Missing `created` (0.0) sinks
+    via -created negation."""
     keep = [t for t in tickets if t.status.lower() not in _HIDDEN]
-    return sorted(keep, key=lambda t: (-t.created, t.id))
+    return sorted(
+        keep,
+        key=lambda t: (
+            STATUS_META.get(t.status, DEFAULT_STATUS_META)[2],
+            -t.created,
+            t.id,
+        ),
+    )
 
 
-def _status_icon(ticket):
-    return STATUS_META.get(ticket.status, ("·", "muted", 9))[0]
+def _status_meta(ticket):
+    return STATUS_META.get(ticket.status, DEFAULT_STATUS_META)
 
 
-def _draw(stdscr, rows, sel, top):
+def _init_colors():
+    """Mirror tui.App.init_colors — same palette so mini matches the main UI."""
+    colors = {}
+    if not curses.has_colors():
+        return colors
+    curses.start_color()
+    try:
+        curses.use_default_colors()
+    except curses.error:
+        pass
+    spec = {
+        "inprogress": curses.COLOR_YELLOW,
+        "inreview": curses.COLOR_MAGENTA,
+        "todo": curses.COLOR_CYAN,
+        "backlog": curses.COLOR_BLUE,
+        "done": curses.COLOR_GREEN,
+        "muted": curses.COLOR_WHITE,
+    }
+    for i, (name, fg) in enumerate(spec.items(), start=1):
+        try:
+            curses.init_pair(i, fg, -1)
+        except curses.error:
+            curses.init_pair(i, fg, curses.COLOR_BLACK)
+        colors[name] = curses.color_pair(i)
+    return colors
+
+
+def _draw(stdscr, rows, sel, top, colors):
     stdscr.erase()
     h, w = stdscr.getmaxyx()
     if w < 20:
@@ -56,20 +91,24 @@ def _draw(stdscr, rows, sel, top):
         if idx >= len(rows):
             break
         t = rows[idx]
-        icon = _status_icon(t)
+        icon, color_name, _ = _status_meta(t)
+        color_attr = colors.get(color_name, 0)
         age = relative_age(t.created) or ""
         age_pad = f"{age:>4}"
         # Layout: icon (col 0) + space + title + right-aligned age.
         age_x = max(0, w - len(age_pad) - 1)
         title_x = 2
         title_w = max(0, age_x - title_x - 1)
-        attr = curses.A_REVERSE if idx == sel else 0
+        sel_attr = curses.A_REVERSE if idx == sel else 0
         try:
             if idx == sel:
-                stdscr.addstr(i, 0, " " * (w - 1), attr)
-            stdscr.addstr(i, 0, icon, attr | curses.A_BOLD)
-            stdscr.addstr(i, title_x, t.title[:title_w], attr)
-            stdscr.addstr(i, age_x, age_pad, attr | curses.A_DIM)
+                stdscr.addstr(i, 0, " " * (w - 1), sel_attr)
+            stdscr.addstr(i, 0, icon, sel_attr | color_attr | curses.A_BOLD)
+            stdscr.addstr(i, title_x, t.title[:title_w], sel_attr | color_attr)
+            stdscr.addstr(
+                i, age_x, age_pad,
+                sel_attr | colors.get("muted", 0) | curses.A_DIM,
+            )
         except curses.error:
             pass
     # Footer hint.
@@ -86,6 +125,7 @@ def _run(stdscr):
     curses.curs_set(0)
     stdscr.keypad(True)
     stdscr.timeout(-1)
+    colors = _init_colors()
     rows = build_rows(load_tickets())
     sel = 0
     top = 0
@@ -97,7 +137,7 @@ def _run(stdscr):
         elif sel >= top + body_h:
             top = sel - body_h + 1
         top = max(0, min(top, max(0, len(rows) - body_h)))
-        _draw(stdscr, rows, sel, top)
+        _draw(stdscr, rows, sel, top, colors)
         ch = stdscr.getch()
         if ch in (ord("q"), 27, 3):  # q / esc / Ctrl-C
             return
