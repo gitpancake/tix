@@ -8,22 +8,18 @@ Reuses tui's `Ticket` parser, `parse_created`, and the module-level
 `open_in_pager` / `pickup_ticket` helpers — mini is a thinner renderer
 over the identical model layer."""
 import curses
-import os
 import sys
-from pathlib import Path
 
 from .tui import (
     CANCELLED_STATUSES,
-    Ticket,
+    STATUS_META,
+    TICKETS_DIR,
     load_tickets,
     open_in_pager,
     pickup_ticket,
     relative_age,
     run_preload_hook,
-    STATUS_META,
-    TICKETS_DIR,
 )
-
 
 # Statuses hidden from mini's flat list — done + every cancelled alias.
 _HIDDEN = {s.lower() for s in CANCELLED_STATUSES} | {"done"}

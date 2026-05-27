@@ -3,7 +3,6 @@ the pure data layer (`build_rows`) and CLI routing."""
 import sys
 from pathlib import Path
 
-
 FIXTURES = Path(__file__).parent / "fixtures" / "tickets"
 
 
@@ -116,7 +115,8 @@ def test_main_routes_project_mini(monkeypatch, tmp_path):
     for mod in ("tix.mini", "tix.tui", "tix.__main__", "tix"):
         sys.modules.pop(mod, None)
 
-    from tix import __main__ as entry, mini, tui
+    from tix import __main__ as entry
+    from tix import mini, tui
     flags = {"mini": 0}
     monkeypatch.setattr(mini, "main", lambda: flags.__setitem__("mini", 1) or 0)
     monkeypatch.setattr(tui, "main", lambda: 99)
