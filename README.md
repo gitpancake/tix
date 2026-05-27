@@ -75,6 +75,20 @@ add-zsh-hook chpwd _tix_tickets_dir
 _tix_tickets_dir
 ```
 
+### Mini reader
+
+For narrow sidecars (think tmux pane next to an editor):
+
+```bash
+tix --mini              # flat reverse-chrono list, ≥20 cols
+tix my-project --mini   # same project resolution as `tix <project>`
+```
+
+Mini surfaces a single signal — *what was filed recently, can I pick one
+up* — and gets out of the way. Done/cancelled hidden; `↑`/`↓` move, `Enter`
+opens in `glow`/`$PAGER`, `p` spawns `wt`, `q` quits. No filters, no
+groups, no rescope — use plain `tix` for that.
+
 ## Keys
 
 | Key | Action |

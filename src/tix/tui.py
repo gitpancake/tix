@@ -403,6 +403,56 @@ def group_sort_key(name):
     return (name.startswith("_"), name.lower())
 
 
+def open_in_pager(stdscr, path):
+    """Suspend curses, open `path` in glow/$PAGER/less, restore curses.
+    Shared between default tix (Enter) and mini (Enter). Same fallback chain."""
+    pager = shutil.which("glow")
+    cmd = [pager, "-p", str(path)] if pager else \
+          [os.environ.get("PAGER", "less"), str(path)]
+    curses.def_prog_mode()
+    curses.endwin()
+    try:
+        subprocess.run(cmd)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    curses.reset_prog_mode()
+    if stdscr is not None:
+        stdscr.refresh()
+
+
+def pickup_ticket(stdscr, ticket):
+    """Suspend curses, fetch+ff main, spawn `wt <slug>` (or `wt --ralph` for
+    epics), restore curses. Writes status=active on the ticket brief.
+    Shared between default tix (`p`) and mini (`p`)."""
+    wt = shutil.which("wt") or "wt"
+    curses.def_prog_mode()
+    curses.endwin()
+    try:
+        in_repo = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True,
+        )
+        if in_repo.returncode != 0:
+            print("tix: cwd is not a git repo — run tix from a repo root.")
+            input("press enter to return…")
+        else:
+            write_status(ticket.path, "active")
+            ticket.status = "active"
+            subprocess.run(["git", "fetch", "--quiet", "origin"])
+            subprocess.run(["git", "checkout", "main"])
+            subprocess.run(["git", "merge", "--ff-only", "origin/main"])
+            wt_env = {**os.environ,
+                      "WT_NO_WATCH": os.environ.get("WT_NO_WATCH", "1")}
+            wt_cmd = ([wt, "--ralph", ticket.slug] if ticket.is_epic
+                      else [wt, ticket.slug])
+            subprocess.run(wt_cmd, env=wt_env)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    curses.reset_prog_mode()
+    if stdscr is not None:
+        stdscr.refresh()
+
+
 class App:
     def __init__(self):
         self.tickets = load_tickets()
@@ -841,17 +891,7 @@ class App:
                 pass
 
     def open_ticket(self, stdscr, ticket):
-        pager = shutil.which("glow")
-        cmd = [pager, "-p", str(ticket.path)] if pager else \
-              [os.environ.get("PAGER", "less"), str(ticket.path)]
-        curses.def_prog_mode()
-        curses.endwin()
-        try:
-            subprocess.run(cmd)
-        except Exception:
-            pass
-        curses.reset_prog_mode()
-        stdscr.refresh()
+        open_in_pager(stdscr, ticket.path)
 
     def open_url(self, ticket):
         if not ticket.url:
@@ -945,55 +985,8 @@ class App:
 
     # ---- ticket actions ----------------------------------------------
     def pickup_ticket(self, stdscr, ticket):
-        """Foreground-suspend curses and hand off to `wt`. The flow mirrors a
-        manual pickup: fetch + check out main + fast-forward + spawn lane.
-        `wt` itself opens the lane in its own tmux window per WT_LAYOUT and
-        returns — wrapping that in our own `tmux new-window` would flash an
-        extra window before wt's real one.
-
-        Epics (a folder with `_epic.md`) hand off via `wt --ralph` so the lane
-        runs the Ralph loop (epic-parse → ralph.sh, one story per iteration)
-        instead of degrading to a single lane that reads `_epic.md` as a flat
-        brief. Story order is the confirmed `epic-stories` block in `_epic.md`."""
-        wt = shutil.which("wt") or "wt"
-        curses.def_prog_mode()
-        curses.endwin()
-        try:
-            # Confirm cwd is a git repo — else wt would fail silently and no
-            # lane window would spawn, which is the exact symptom we're fixing.
-            in_repo = subprocess.run(
-                ["git", "rev-parse", "--show-toplevel"],
-                capture_output=True, text=True,
-            )
-            if in_repo.returncode != 0:
-                print("tix: cwd is not a git repo — run tix from a repo root.")
-                input("press enter to return…")
-            else:
-                # Mark in-progress up front so the brief reflects the pickup
-                # immediately. The reconciler keeps deriving `active` from the
-                # live lane after this, but we don't wait for it to run.
-                write_status(ticket.path, "active")
-                ticket.status = "active"
-                # /pickup-style base sync: fetch + checkout main + ff merge.
-                # Each step is best-effort; wt still runs even on partial sync
-                # so a transient fetch failure doesn't block the lane.
-                subprocess.run(["git", "fetch", "--quiet", "origin"])
-                subprocess.run(["git", "checkout", "main"])
-                subprocess.run(["git", "merge", "--ff-only", "origin/main"])
-                # Default pickups to a single pane (no auto lane-watch monitor
-                # split). Respect an explicit ambient WT_NO_WATCH if the user
-                # set one — otherwise force "1" so a stale shell that never
-                # exported it still gets the one-pane layout.
-                wt_env = {**os.environ,
-                          "WT_NO_WATCH": os.environ.get("WT_NO_WATCH", "1")}
-                wt_cmd = ([wt, "--ralph", ticket.slug] if ticket.is_epic
-                          else [wt, ticket.slug])
-                subprocess.run(wt_cmd, env=wt_env)
-        except OSError:
-            pass
-        curses.reset_prog_mode()
-        stdscr.refresh()
         path = ticket.path
+        pickup_ticket(stdscr, ticket)
         self.rebuild()
         self.reselect_path(path)
 
