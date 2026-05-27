@@ -3,6 +3,7 @@
   tix                browse $TICKETS_DIR (default ~/.claude/tickets)
   tix <project>      browse ~/.claude/tickets/<project>/ (centralized layout)
                      and chdir into the project's code repo so pickup works.
+  tix --mini         narrow-pane reverse-chrono reader (composes with <project>).
 
 Code-repo lookup root defaults to ~/Documents/code; override with $TIX_CODE_DIR.
 """
@@ -63,6 +64,12 @@ def main(argv=None):
         proj = argv.pop(0)
         if not resolve_project(proj):
             return 1
+
+    if "--mini" in argv:
+        argv = [a for a in argv if a != "--mini"]
+        from . import mini
+        sys.argv = ["tix", *argv]
+        return mini.main()
 
     from . import tui
     sys.argv = ["tix", *argv]
