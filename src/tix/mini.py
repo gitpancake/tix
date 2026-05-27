@@ -20,6 +20,7 @@ from .tui import (
     pickup_ticket,
     relative_age,
     run_preload_hook,
+    write_status,
 )
 
 # Statuses hidden from mini's flat list — done + every cancelled alias.
@@ -46,6 +47,21 @@ def build_rows(tickets):
 
 def _status_meta(ticket):
     return STATUS_META.get(ticket.status, DEFAULT_STATUS_META)
+
+
+# Mini's status toggles — same sticky semantics as tui's `i`/`d`/`x`. Each
+# key flips between its target status and `open`; cancelled toggle treats any
+# CANCELLED_STATUSES alias as "currently cancelled".
+def _toggle_status(ticket, ch):
+    cur = ticket.status
+    if ch == ord("i"):
+        new = "open" if cur.lower() == "active" else "active"
+    elif ch == ord("d"):
+        new = "open" if cur.lower() == "done" else "done"
+    else:  # ord("x")
+        new = "open" if cur in CANCELLED_STATUSES else "cancelled"
+    write_status(ticket.path, new)
+    ticket.status = new
 
 
 def _init_colors():
@@ -113,7 +129,7 @@ def _draw(stdscr, rows, sel, top, colors):
             pass
     # Footer hint.
     if h >= 1:
-        hint = "↑↓ ⏎ open · p pickup · q quit"
+        hint = "↑↓ ⏎ · p pickup · i/d/x status · q quit"
         try:
             stdscr.addstr(h - 1, 0, hint[: max(0, w - 1)], curses.A_DIM)
         except curses.error:
@@ -167,6 +183,17 @@ def _run(stdscr):
                     sel = i
                     break
             else:
+                sel = min(sel, max(0, len(rows) - 1))
+        elif ch in (ord("i"), ord("d"), ord("x")):
+            ticket = rows[sel]
+            _toggle_status(ticket, ch)
+            rows = build_rows(load_tickets())
+            for i, t in enumerate(rows):
+                if t.path == ticket.path:
+                    sel = i
+                    break
+            else:
+                # Ticket dropped from view (now done/cancelled).
                 sel = min(sel, max(0, len(rows) - 1))
 
 
