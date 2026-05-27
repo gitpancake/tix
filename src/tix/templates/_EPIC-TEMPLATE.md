@@ -3,7 +3,7 @@ linear:                       # Linear epic ID once synced; empty = draft
 title: <epic name, ≤80 chars>
 status: open
 area: integrations            # integrations | platform | ops | tooling | spikes
-created: <ISO-8601>
+created: <ISO-8601 UTC instant, e.g. 2026-05-27T18:13:00Z — date-only falls back to file birthtime>
 ---
 
 ## Context

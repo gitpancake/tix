@@ -14,6 +14,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 TICKETS_DIR = Path(os.environ.get("TICKETS_DIR", Path.home() / ".claude" / "tickets"))
@@ -74,6 +76,12 @@ PRIORITY_META = {
 PRIORITY_ORDER = ["P0", "P1", "P2", "P3"]
 PRIORITY_DEFAULT_RANK = 9
 
+# Sort modes — extend `SORT_MODES` and `App.sort_within_group` together. The
+# picker (`s` keystroke) cycles this list; `priority` preserves the long-time
+# default ordering, `created` surfaces freshly written briefs.
+SORT_MODES = ["priority", "created"]
+SORT_LABELS = {"priority": "priority", "created": "date"}
+
 # Fixed area bucket set (kept in sync with ~/.claude/tickets/README.md). The
 # minibuffer move picker indexes into this list — extend with care.
 AREAS = ["integrations", "ops", "platform", "spikes", "tooling"]
@@ -96,6 +104,8 @@ FILTER + SEARCH
   tab / shift-tab  cycle status filter chip
   1-9              jump to filter chip N
   /                start text search (esc to cancel, ⏎ to commit)
+  s                sort picker → ↑/↓ select, ⏎ apply, esc cancel
+                   modes: priority (default), date (newest first)
 
 TICKET ACTIONS
   p              pickup → mark active + wt <slug>; epic → wt --ralph <slug>
@@ -268,6 +278,59 @@ def clean_title(title, ticket_id):
     return title or ticket_id
 
 
+def parse_created(fm, path):
+    """Epoch seconds for ticket creation. Frontmatter `created:` wins so users
+    can override; falls back to filesystem birthtime (macOS) or ctime so legacy
+    briefs without the field still sort. Returns 0.0 only when both fail."""
+    raw = (fm.get("created") or "").strip() if fm else ""
+    # Date-only `created:` (no `T`) is not an instant — treating it as
+    # midnight (any tz) skews relative ages by up to a day. Fall through to
+    # filesystem birthtime so a freshly-written ticket reads as fresh.
+    if raw and "T" in raw:
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            dt = None
+        if dt is not None:
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+    try:
+        st = path.stat()
+    except OSError:
+        return 0.0
+    return getattr(st, "st_birthtime", None) or st.st_ctime or st.st_mtime
+
+
+def relative_age(epoch):
+    """Compact age string for the list view (≤3 chars where possible).
+    Empty when epoch is missing — caller renders nothing."""
+    if not epoch:
+        return ""
+    delta = max(0, int(time.time() - epoch))
+    if delta < 60:
+        return f"{delta}s"
+    if delta < 3600:
+        return f"{delta // 60}m"
+    if delta < 86400:
+        return f"{delta // 3600}h"
+    if delta < 86400 * 30:
+        return f"{delta // 86400}d"
+    if delta < 86400 * 365:
+        return f"{delta // (86400 * 30)}mo"
+    return f"{delta // (86400 * 365)}y"
+
+
+def format_created(epoch):
+    """ISO date for the preview pane. Empty when epoch is missing."""
+    if not epoch:
+        return ""
+    try:
+        return datetime.fromtimestamp(epoch).strftime("%Y-%m-%d")
+    except (OSError, ValueError, OverflowError):
+        return ""
+
+
 class Ticket:
     def __init__(self, path):
         fm = parse_frontmatter(path)
@@ -291,6 +354,7 @@ class Ticket:
                     if self.linear and LINEAR_WORKSPACE else fm.get("url", ""))
         self.title = clean_title(fm.get("title", self.slug), self.slug)
         self.group = path.parent.name
+        self.created = parse_created(fm, path)
 
     @property
     def meta(self):
@@ -349,6 +413,10 @@ class App:
         # move_mode is None or the Ticket awaiting an area pick from the footer
         # minibuffer (`m` enters; 1-N commits; esc cancels).
         self.move_mode = None
+        # sort_pick_idx is None outside the sort picker; while picking, holds the
+        # candidate index into SORT_MODES (↑↓ adjusts, ⏎ commits, esc cancels).
+        self.sort_mode = "priority"
+        self.sort_pick_idx = None
         self.sel = 0
         self.top = 0
         self.colors = {}
@@ -357,16 +425,22 @@ class App:
         self.rebuild()
 
     # ---- data ---------------------------------------------------------
+    def sort_within_group(self, tickets):
+        if self.sort_mode == "created":
+            # Newest first. Negate the epoch so missing-created (0.0) sinks.
+            return sorted(tickets, key=lambda t: (-t.created, t.id))
+        return sorted(tickets, key=lambda t: (
+            PRIORITY_META.get(t.priority, (PRIORITY_DEFAULT_RANK, None))[0],
+            t.meta[2],
+            t.id,
+        ))
+
     def rebuild(self):
         by_group = {}
         for t in self.tickets:
             by_group.setdefault(t.group, []).append(t)
         for g in by_group:
-            by_group[g].sort(key=lambda t: (
-                PRIORITY_META.get(t.priority, (PRIORITY_DEFAULT_RANK, None))[0],
-                t.meta[2],
-                t.id,
-            ))
+            by_group[g] = self.sort_within_group(by_group[g])
         self.by_group = by_group
         self.groups = sorted(by_group, key=group_sort_key)
         # group_meta[g] = (is_epic_group, area). Epic groups live one level deeper
@@ -540,6 +614,10 @@ class App:
             kv.append(("epic", t.epic))
         if t.linear:
             kv.append(("linear", t.linear))
+        created_iso = format_created(t.created)
+        if created_iso:
+            age = relative_age(t.created)
+            kv.append(("created", f"{created_iso} ({age} ago)" if age else created_iso))
         for key, val in kv:
             if y - y0 >= h:
                 break
@@ -634,6 +712,13 @@ class App:
         id_col = f"{disp_id[:13]:<13}"
         prio_tag = t.priority if t.priority in PRIORITY_META else "  "
         prio_color = PRIORITY_META.get(t.priority, (None, "muted"))[1]
+        age = relative_age(t.created)
+        age_pad = f"{age:>4}"  # fixed-width so the status column stays aligned
+        # Right-aligned layout: status flush right, then age (4ch + 1 space gap).
+        status_x = max(0, w - len(status) - 1)
+        age_x = max(0, status_x - len(age_pad) - 1)
+        title_x = 7 + len(id_col) + 1
+        avail = max(0, age_x - title_x - 1)
         if selected:
             self._put(stdscr, y, 0, " " * (w - 1), curses.A_REVERSE, maxx=w)
             base = curses.A_REVERSE
@@ -641,20 +726,19 @@ class App:
             self._put(stdscr, y, 4, f"{prio_tag:<2}",
                       base | curses.A_BOLD, maxx=w)
             self._put(stdscr, y, 7, id_col, base | curses.A_BOLD, maxx=w)
-            title_x = 7 + len(id_col) + 1
-            avail = w - title_x - len(status) - 2
-            self._put(stdscr, y, title_x, t.title[: max(0, avail)], base, maxx=w)
-            self._put(stdscr, y, max(title_x, w - len(status) - 1), status,
+            self._put(stdscr, y, title_x, t.title[:avail], base, maxx=w)
+            self._put(stdscr, y, age_x, age_pad, base | curses.A_DIM, maxx=w)
+            self._put(stdscr, y, status_x, status,
                       base | curses.A_DIM, maxx=w)
         else:
             self._put(stdscr, y, 2, icon, self.attr(color, curses.A_BOLD), maxx=w)
             self._put(stdscr, y, 4, f"{prio_tag:<2}",
                       self.attr(prio_color, curses.A_BOLD), maxx=w)
             self._put(stdscr, y, 7, id_col, curses.A_DIM, maxx=w)
-            title_x = 7 + len(id_col) + 1
-            avail = w - title_x - len(status) - 2
-            self._put(stdscr, y, title_x, t.title[: max(0, avail)], maxx=w)
-            self._put(stdscr, y, max(title_x, w - len(status) - 1), status,
+            self._put(stdscr, y, title_x, t.title[:avail], maxx=w)
+            self._put(stdscr, y, age_x, age_pad,
+                      self.attr("muted", curses.A_DIM), maxx=w)
+            self._put(stdscr, y, status_x, status,
                       self.attr(color), maxx=w)
 
     def draw_footer(self, stdscr, h, w):
@@ -666,6 +750,23 @@ class App:
             self._put(stdscr, y, 0, text[:w],
                       self.attr("accent", curses.A_REVERSE | curses.A_BOLD))
             return
+        if self.sort_pick_idx is not None:
+            self._put(stdscr, y, 0, " " * (w - 1), curses.A_REVERSE)
+            self._put(stdscr, y, 0, " sort: ",
+                      self.attr("accent", curses.A_REVERSE | curses.A_BOLD))
+            x = 7
+            for i, mode in enumerate(SORT_MODES):
+                label = SORT_LABELS.get(mode, mode)
+                token = f"[{label}]" if i == self.sort_pick_idx else f" {label} "
+                attr = (self.attr("accent", curses.A_REVERSE | curses.A_BOLD)
+                        if i == self.sort_pick_idx
+                        else curses.A_REVERSE | curses.A_DIM)
+                self._put(stdscr, y, x, token, attr, maxx=w)
+                x += len(token) + 1
+            hint = "  ↑↓ select · ⏎ apply · esc cancel "
+            self._put(stdscr, y, max(x, w - len(hint) - 1), hint,
+                      curses.A_REVERSE | curses.A_DIM, maxx=w)
+            return
         if self.search_mode:
             prompt = f"/{self.query}"
             self._put(stdscr, y, 0, " " * (w - 1), curses.A_REVERSE)
@@ -675,8 +776,10 @@ class App:
             except curses.error:
                 pass
             return
-        hints = ("⏎ open · p pickup · e edit · R rescope · n new · m move · "
-                 "+/− prio · i wip · d done · x cancel · ? help · q quit")
+        sort_label = SORT_LABELS.get(self.sort_mode, self.sort_mode)
+        hints = (f"⏎ open · p pickup · e edit · R rescope · n new · m move · "
+                 f"+/− prio · i wip · d done · x cancel · s sort({sort_label}) "
+                 f"· ? help · q quit")
         if self.query:
             hints = f"filter:/{self.query}   " + hints
         self._put(stdscr, y, 0, hints, self.attr("muted", curses.A_DIM))
@@ -1054,6 +1157,24 @@ class App:
                     if idx < len(AREAS):
                         self.move_ticket(ticket, AREAS[idx])
                 continue
+            if self.sort_pick_idx is not None:
+                if ch == 27:  # esc — cancel
+                    self.sort_pick_idx = None
+                elif ch in (curses.KEY_UP, ord("k"), curses.KEY_LEFT, ord("h")):
+                    self.sort_pick_idx = (self.sort_pick_idx - 1) % len(SORT_MODES)
+                elif ch in (curses.KEY_DOWN, ord("j"), curses.KEY_RIGHT, ord("l"),
+                            ord("\t")):
+                    self.sort_pick_idx = (self.sort_pick_idx + 1) % len(SORT_MODES)
+                elif ch in (curses.KEY_ENTER, 10, 13):
+                    new_mode = SORT_MODES[self.sort_pick_idx]
+                    self.sort_pick_idx = None
+                    if new_mode != self.sort_mode:
+                        keep = self.selected_path()
+                        self.sort_mode = new_mode
+                        self.rebuild()
+                        if keep:
+                            self.reselect_path(keep)
+                continue
             if self.search_mode:
                 self.handle_search_key(ch)
                 continue
@@ -1148,6 +1269,9 @@ class App:
                     # whole tree moved, which is out of scope for now.
                     if not t.is_epic and t.path.parent.parent == TICKETS_DIR:
                         self.move_mode = t
+            elif ch == ord("s"):
+                self.sort_pick_idx = (SORT_MODES.index(self.sort_mode)
+                                      if self.sort_mode in SORT_MODES else 0)
             elif ch == ord("?"):
                 self.show_help(stdscr)
             elif ch in (ord("C"), ord("z")):
