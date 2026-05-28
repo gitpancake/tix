@@ -15,6 +15,7 @@ from .tui import (
     DEFAULT_STATUS_META,
     STATUS_META,
     TICKETS_DIR,
+    dir_signature,
     load_tickets,
     open_in_pager,
     pickup_ticket,
@@ -154,12 +155,20 @@ def _draw(stdscr, rows, sel, top, colors):
 def _run(stdscr):
     curses.curs_set(0)
     stdscr.keypad(True)
-    stdscr.timeout(-1)
     colors = _init_colors()
+    # Capture dir_sig BEFORE load_tickets so any write racing the initial scan
+    # bumps the next poll and triggers a reload.
+    dir_sig = dir_signature()
     rows = build_rows(load_tickets())
     sel = 0
     top = 0
     while True:
+        # Re-apply the 2 s idle timeout every iter. open_in_pager / pickup_ticket
+        # suspend curses (def_prog_mode/endwin/reset_prog_mode) and some terminals
+        # drop the window timeout on resume — leaving getch() blocking, so the
+        # dir_signature poll never fires and externally-created tickets are
+        # invisible until the user quits + reopens.
+        stdscr.timeout(2000)
         h, _ = stdscr.getmaxyx()
         body_h = max(1, h - 1)
         if sel < top:
@@ -169,6 +178,24 @@ def _run(stdscr):
         top = max(0, min(top, max(0, len(rows) - body_h)))
         _draw(stdscr, rows, sel, top, colors)
         ch = stdscr.getch()
+        if ch == -1:
+            new_sig = dir_signature()
+            if new_sig != dir_sig:
+                prev_path = rows[sel].path if rows else None
+                # Capture sig BEFORE load_tickets — writes during load bump
+                # next poll instead of being missed.
+                dir_sig = dir_signature()
+                rows = build_rows(load_tickets())
+                if prev_path is not None:
+                    for i, t in enumerate(rows):
+                        if t.path == prev_path:
+                            sel = i
+                            break
+                    else:
+                        sel = min(sel, max(0, len(rows) - 1))
+                else:
+                    sel = 0
+            continue
         if ch in (ord("q"), 27, 3):  # q / esc / Ctrl-C
             return
         if not rows:
@@ -190,6 +217,7 @@ def _run(stdscr):
         elif ch == ord("p"):
             ticket = rows[sel]
             pickup_ticket(stdscr, ticket)
+            dir_sig = dir_signature()
             rows = build_rows(load_tickets())
             # Re-find the same path to keep cursor steady; else clamp.
             for i, t in enumerate(rows):
@@ -201,6 +229,7 @@ def _run(stdscr):
         elif ch in (ord("i"), ord("d"), ord("x")):
             ticket = rows[sel]
             _toggle_status(ticket, ch)
+            dir_sig = dir_signature()
             rows = build_rows(load_tickets())
             for i, t in enumerate(rows):
                 if t.path == ticket.path:
@@ -216,9 +245,9 @@ def main():
         print(f"tix: no ticket directory at {TICKETS_DIR}", file=sys.stderr)
         return 1
     run_preload_hook()
-    if not load_tickets():
-        print(f"tix: no tickets found under {TICKETS_DIR}", file=sys.stderr)
-        return 1
+    # No empty-tree bail: mini is meant to sit open as a sidecar, so it must
+    # survive a cold start with zero tickets and surface the first one created
+    # via the same idle-poll path that handles later additions.
     curses.wrapper(_run)
     return 0
 
