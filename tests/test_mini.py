@@ -135,7 +135,7 @@ def test_main_routes_mini_flag(monkeypatch, tmp_path):
 def test_main_routes_project_mini(monkeypatch, tmp_path):
     """`tix <proj> --mini` resolves project then dispatches to mini."""
     home = tmp_path / "home"
-    central = home / ".claude" / "tickets" / "proj"
+    central = home / ".pi" / "agent" / "tickets" / "proj"
     central.mkdir(parents=True)
     code_repo = tmp_path / "code" / "proj"
     (code_repo / ".git").mkdir(parents=True)

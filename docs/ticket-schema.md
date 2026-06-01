@@ -1,7 +1,7 @@
 # Ticket schema
 
 The contract between tix and your ticket tree. Read this before hand-editing
-anything under `$TICKETS_DIR` (default `~/.claude/tickets`).
+anything under `$TICKETS_DIR` (default `~/.pi/agent/tickets`).
 
 ## The one rule
 

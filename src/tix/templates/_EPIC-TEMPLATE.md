@@ -20,8 +20,8 @@ created: <ISO-8601 UTC instant, e.g. 2026-05-27T18:13:00Z — date-only falls ba
 
 <!--
   epic-stories: the authoritative ordered story list + dependency DAG.
-  A human confirms this block before any lane spawns. epic-parse.sh projects it
-  into scripts/ralph/prd.json at lane-spawn. Ralph executes it — it never decomposes.
+  Pi reads this block and the referenced child briefs directly when `wt <epic>`
+  spawns a lane.
     id      — matches the child filename, NN-<slug> (NN = execution order)
     needs   — story ids this one depends on; [] = ready immediately
     context — the NN-<child>.md file carrying this story's deep detail

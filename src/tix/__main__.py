@@ -1,7 +1,7 @@
 """tix CLI entry point.
 
-  tix                browse $TICKETS_DIR (default ~/.claude/tickets)
-  tix <project>      browse ~/.claude/tickets/<project>/ (centralized layout)
+  tix                browse $TICKETS_DIR (default ~/.pi/agent/tickets)
+  tix <project>      browse ~/.pi/agent/tickets/<project>/ (centralized layout)
                      and chdir into the project's code repo so pickup works.
   tix --mini         narrow-pane reverse-chrono reader (composes with <project>).
 
@@ -21,19 +21,22 @@ def resolve_project(proj):
     if cwd isn't a repo root, wt fails silently and no lane spawns. The code
     repo is looked up under $TIX_CODE_DIR (default ~/Documents/code).
 
-    Brief-tree precedence: centralized ~/.claude/tickets/<proj> (preferred) →
-    the repo's own ./.claude/tickets → the cwd-relative ./<proj>/.claude/tickets
-    (legacy)."""
+    Brief-tree precedence: centralized ~/.pi/agent/tickets/<proj> (preferred) →
+    legacy centralized ~/.claude/tickets/<proj> → the repo's own
+    ./.claude/tickets → the cwd-relative ./<proj>/.claude/tickets."""
     code_root = Path(
         os.environ.get("TIX_CODE_DIR", Path.home() / "Documents" / "code")
     ).expanduser()
     code_dir = code_root / proj
-    centralized = Path.home() / ".claude" / "tickets" / proj
+    centralized = Path.home() / ".pi" / "agent" / "tickets" / proj
+    legacy_centralized = Path.home() / ".claude" / "tickets" / proj
     repo_local = code_dir / ".claude" / "tickets"
     legacy = Path.cwd() / proj / ".claude" / "tickets"
 
     if centralized.is_dir():
         tickets_dir = centralized
+    elif legacy_centralized.is_dir():
+        tickets_dir = legacy_centralized
     elif repo_local.is_dir():
         tickets_dir = repo_local
     elif legacy.is_dir():
@@ -41,7 +44,7 @@ def resolve_project(proj):
     else:
         print(
             f"tix: no ticket directory for '{proj}' "
-            f"(looked in {centralized}, {repo_local}, {legacy})",
+            f"(looked in {centralized}, {legacy_centralized}, {repo_local}, {legacy})",
             file=sys.stderr,
         )
         return False

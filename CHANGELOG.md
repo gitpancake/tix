@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.5] — 2026-06-01
+
+### Changed
+- Default ticket tree moved from `~/.claude/tickets` to `~/.pi/agent/tickets`.
+- `tix <project>` now prefers `~/.pi/agent/tickets/<project>`, while retaining
+  legacy fallbacks for `~/.claude/tickets/<project>` and repo-local
+  `.claude/tickets` trees.
+- Epic templates now describe Pi's direct child-brief pickup flow instead of the
+  old Ralph projection flow.
+- Epic pickup now uses plain `wt <slug>` instead of `wt --ralph <slug>`.
+
+### Fixed
+- Pickup's best-effort git sync now suppresses git noise and skips checkout/merge
+  in unborn or origin-less repositories instead of blocking lane spawn.
+
 ## [0.3.2] — 2026-05-27
 
 ### Added
@@ -43,8 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs against the right repo. Previously the centralized layout never
   chdir'd and pickup silently no-op'd outside a repo root.
 - `TIX_CODE_DIR` env var — overrides the code-repo lookup root.
-- Brief-tree precedence extended: centralized `~/.claude/tickets/<proj>` →
-  repo-local `$TIX_CODE_DIR/<proj>/.claude/tickets` → cwd-legacy
+- Brief-tree precedence extended: centralized `~/.pi/agent/tickets/<proj>` →
+  legacy centralized `~/.claude/tickets/<proj>` → repo-local
+  `$TIX_CODE_DIR/<proj>/.claude/tickets` → cwd-legacy
   `./<proj>/.claude/tickets`.
 
 ### Changed

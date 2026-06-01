@@ -5,7 +5,7 @@
 `tix` is a keyboard-driven curses TUI over a tree of markdown ticket briefs. Stdlib-only Python. Single surface:
 
 - `src/tix/tui.py` — curses reader. Renders, filters, navigates, pickups.
-- `src/tix/__main__.py` — CLI router (default → TUI; `tix <project>` → resolve `~/.claude/tickets/<project>/`, fallback `./<project>/.claude/tickets/`; sets `TICKETS_DIR` before the TUI imports).
+- `src/tix/__main__.py` — CLI router (default → TUI; `tix <project>` → resolve `~/.pi/agent/tickets/<project>/`, fallback through legacy `~/.claude/tickets/<project>/` / repo-local `.claude/tickets/`; sets `TICKETS_DIR` before the TUI imports).
 
 **tix is a pure reader.** It does not write `status:` frontmatter. Users who want status auto-derived wire up their own script via `TIX_PRELOAD_HOOK`. That contract is load-bearing — do not bundle a reconciler.
 
@@ -28,15 +28,16 @@ Pre-migration title-case variants (`In Progress`, `Todo`, etc.) are kept as read
 
 ## TICKETS_DIR resolution
 
-Order: `$TICKETS_DIR` (explicit) → `~/.claude/tickets` (fallback). No in-binary project autodiscovery from cwd.
+Order: `$TICKETS_DIR` (explicit) → `~/.pi/agent/tickets` (fallback). No in-binary project autodiscovery from cwd.
 
 The `tix <project>` form (`resolve_project` in `__main__.py`) does two things:
 
 **Picks the brief tree** (sets `TICKETS_DIR`):
-1. `~/.claude/tickets/<project>/` if it exists (centralized — preferred)
-2. else `$TIX_CODE_DIR/<project>/.claude/tickets/` (repo-local)
-3. else `./<project>/.claude/tickets/` (cwd-relative legacy)
-4. else error
+1. `~/.pi/agent/tickets/<project>/` if it exists (centralized — preferred)
+2. else `~/.claude/tickets/<project>/` (legacy centralized)
+3. else `$TIX_CODE_DIR/<project>/.claude/tickets/` (repo-local)
+4. else `./<project>/.claude/tickets/` (cwd-relative legacy)
+5. else error
 
 **chdirs into the project's git repo** so pickup (`p` → `wt`) operates on the right repo — wt fails silently when cwd isn't a repo root. Lookup root is `$TIX_CODE_DIR` (default `~/Documents/code`); falls back to a cwd-relative `./<project>` repo for the legacy layout. The chdir is independent of which brief tree was chosen — centralized tickets + chdir into the code repo is the common case.
 

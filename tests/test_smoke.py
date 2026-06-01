@@ -19,6 +19,16 @@ def test_package_imports():
     assert tix.__version__
 
 
+def test_tui_default_tickets_dir_is_pi_agent(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("TICKETS_DIR", raising=False)
+    for mod in ("tix.tui", "tix"):
+        sys.modules.pop(mod, None)
+
+    from tix import tui
+    assert tui.TICKETS_DIR == tmp_path / "home" / ".pi" / "agent" / "tickets"
+
+
 def test_tui_loads_tickets(monkeypatch):
     _set_tickets_dir(monkeypatch)
     from tix import tui
@@ -55,7 +65,7 @@ def test_resolve_project_chdirs_into_code_repo(monkeypatch, tmp_path):
     """`tix <project>` points TICKETS_DIR at the centralized tree and chdirs
     into the code repo under $TIX_CODE_DIR so pickup runs against it."""
     home = tmp_path / "home"
-    central = home / ".claude" / "tickets" / "proj"
+    central = home / ".pi" / "agent" / "tickets" / "proj"
     central.mkdir(parents=True)
     code_repo = tmp_path / "code" / "proj"
     (code_repo / ".git").mkdir(parents=True)
@@ -85,3 +95,18 @@ def test_pager_and_pickup_helpers_exposed():
     from tix import tui
     assert callable(getattr(tui, "open_in_pager", None))
     assert callable(getattr(tui, "pickup_ticket", None))
+
+
+def test_pickup_git_sync_skips_unborn_repo(monkeypatch, tmp_path, capfd):
+    from tix import tui
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.chdir(repo)
+    assert os.system("git init -b main >/dev/null 2>&1") == 0
+
+    tui.run_pickup_git_sync()
+
+    captured = capfd.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tix — terminal ticket explorer for ~/.claude/tickets.
+"""tix — terminal ticket explorer for ~/.pi/agent/tickets.
 
 Keyboard-driven, Linear-like TUI over the local ticket briefs. The list
 view groups tickets by their on-disk folder; Enter opens the full
@@ -18,7 +18,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-TICKETS_DIR = Path(os.environ.get("TICKETS_DIR", Path.home() / ".claude" / "tickets"))
+TICKETS_DIR = Path(os.environ.get("TICKETS_DIR", Path.home() / ".pi" / "agent" / "tickets"))
 LANES_FILE = Path(os.environ.get("ACTIVE_LANES_FILE",
                                  Path.home() / ".claude" / "active-lanes.json"))
 
@@ -39,7 +39,7 @@ def claude_argv(prompt):
 META_FILES = {"README.md", "_TEMPLATE.md", "_EPIC-TEMPLATE.md", "_CHILD-TEMPLATE.md"}
 
 # status label -> (icon, color name, sort rank). Lowercase keys are the current
-# schema (~/.claude/tickets/README.md); title-case keys are legacy (pre-migration).
+# schema ($TICKETS_DIR/README.md); title-case keys are legacy (pre-migration).
 STATUS_META = {
     "active":      ("◐", "inprogress", 0),
     "open":        ("○", "todo", 1),
@@ -82,7 +82,7 @@ PRIORITY_DEFAULT_RANK = 9
 SORT_MODES = ["priority", "created"]
 SORT_LABELS = {"priority": "priority", "created": "date"}
 
-# Fixed area bucket set (kept in sync with ~/.claude/tickets/README.md). The
+# Fixed area bucket set (kept in sync with $TICKETS_DIR/README.md). The
 # minibuffer move picker indexes into this list — extend with care.
 AREAS = ["integrations", "ops", "platform", "spikes", "tooling"]
 
@@ -108,7 +108,7 @@ FILTER + SEARCH
                    modes: priority (default), date (newest first)
 
 TICKET ACTIONS
-  p              pickup → mark active + wt <slug>; epic → wt --ralph <slug>
+  p              pickup → mark active + wt <slug>
                  (suspend curses, run, return)
   e              edit brief in $EDITOR; reload after
   R              rescope → $EDITOR scratch → claude "/rescope <slug> <text>"
@@ -195,7 +195,7 @@ def dir_signature():
 
 def is_tombstone(path):
     """A tombstone is a brief whose only content is `moved -> <path>`. The
-    contract (~/.claude/tickets/README.md) defines them as redirects; tix
+    contract ($TICKETS_DIR/README.md) defines them as redirects; tix
     should not surface them as tickets. We sniff only the first non-empty
     line so the check stays cheap on the rglob hot path."""
     try:
@@ -420,10 +420,37 @@ def open_in_pager(stdscr, path):
         stdscr.refresh()
 
 
+def run_pickup_git_sync():
+    """Best-effort fetch+ff main before spawning `wt`.
+
+    Empty/new repos have an unborn HEAD and often no origin/main yet; pickup must
+    still work there, so skip the sync unless both local HEAD and origin/main are
+    valid revisions. Keep git noise out of the suspended curses screen.
+    """
+    quiet = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+    subprocess.run(["git", "fetch", "--quiet", "origin"], **quiet)
+
+    has_head = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD"], **quiet
+    ).returncode == 0
+    has_origin_main = subprocess.run(
+        ["git", "rev-parse", "--verify", "refs/remotes/origin/main"], **quiet
+    ).returncode == 0
+    has_local_main = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", "refs/heads/main"], **quiet
+    ).returncode == 0
+    if not (has_head and has_origin_main and has_local_main):
+        return
+
+    checkout = subprocess.run(["git", "checkout", "main"], **quiet)
+    if checkout.returncode == 0:
+        subprocess.run(["git", "merge", "--ff-only", "origin/main"], **quiet)
+
+
 def pickup_ticket(stdscr, ticket):
-    """Suspend curses, fetch+ff main, spawn `wt <slug>` (or `wt --ralph` for
-    epics), restore curses. Writes status=active on the ticket brief.
-    Shared between default tix (`p`) and mini (`p`)."""
+    """Suspend curses, fetch+ff main, spawn `wt <slug>`, restore curses.
+    Writes status=active on the ticket brief. Shared between default tix (`p`)
+    and mini (`p`)."""
     wt = shutil.which("wt") or "wt"
     curses.def_prog_mode()
     curses.endwin()
@@ -438,14 +465,10 @@ def pickup_ticket(stdscr, ticket):
         else:
             write_status(ticket.path, "active")
             ticket.status = "active"
-            subprocess.run(["git", "fetch", "--quiet", "origin"])
-            subprocess.run(["git", "checkout", "main"])
-            subprocess.run(["git", "merge", "--ff-only", "origin/main"])
+            run_pickup_git_sync()
             wt_env = {**os.environ,
                       "WT_NO_WATCH": os.environ.get("WT_NO_WATCH", "1")}
-            wt_cmd = ([wt, "--ralph", ticket.slug] if ticket.is_epic
-                      else [wt, ticket.slug])
-            subprocess.run(wt_cmd, env=wt_env)
+            subprocess.run([wt, ticket.slug], env=wt_env)
     except (OSError, subprocess.SubprocessError):
         pass
     curses.reset_prog_mode()
@@ -647,8 +670,7 @@ class App:
         y += 1
         # Pickup slug — exact arg for `wt`/`/pickup`. Surfaces what `p` will run.
         if y - y0 < h:
-            pickup_cmd = f"wt --ralph {t.slug}" if t.is_epic else f"wt {t.slug}"
-            self._put(stdscr, y, x0, f"pickup: {pickup_cmd}"[:w],
+            self._put(stdscr, y, x0, f"pickup: wt {t.slug}"[:w],
                       self.attr("accent", curses.A_DIM), maxx=x0 + w)
             y += 1
         meta_bits = [b for b in (t.area, t.status, t.priority) if b]

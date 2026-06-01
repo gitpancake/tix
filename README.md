@@ -41,16 +41,16 @@ pipx install --editable .
 ## Quickstart
 
 ```bash
-mkdir -p ~/.claude/tickets/spikes
+mkdir -p ~/.pi/agent/tickets/spikes
 cp $(python -c 'import tix, pathlib; print(pathlib.Path(tix.__file__).parent / "templates" / "_TEMPLATE.md")') \
-   ~/.claude/tickets/spikes/my-first-ticket.md
+   ~/.pi/agent/tickets/spikes/my-first-ticket.md
 tix
 ```
 
 Or point at a project tree:
 
 ```bash
-tix my-project           # browses ~/.claude/tickets/my-project (centralized)
+tix my-project           # browses ~/.pi/agent/tickets/my-project (centralized)
                          # and chdirs into ~/Documents/code/my-project so
                          # pickup (p) runs against the right repo
 TIX_CODE_DIR=~/src tix my-project   # override the code-repo lookup root
@@ -65,8 +65,8 @@ _tix_tickets_dir() {
   local root base
   root=$(git rev-parse --show-toplevel 2>/dev/null) || { unset TICKETS_DIR; return; }
   base=${root:t}
-  if [[ -d "$HOME/.claude/tickets/$base" ]]; then
-    export TICKETS_DIR="$HOME/.claude/tickets/$base"
+  if [[ -d "$HOME/.pi/agent/tickets/$base" ]]; then
+    export TICKETS_DIR="$HOME/.pi/agent/tickets/$base"
   else
     unset TICKETS_DIR
   fi
@@ -142,7 +142,7 @@ Full contract: [`docs/ticket-schema.md`](docs/ticket-schema.md).
 
 | Env | Default | Purpose |
 |---|---|---|
-| `TICKETS_DIR` | `~/.claude/tickets` | Root of the ticket tree |
+| `TICKETS_DIR` | `~/.pi/agent/tickets` | Root of the ticket tree |
 | `TIX_CODE_DIR` | `~/Documents/code` | Lookup root for `tix <project>` — the repo it chdirs into so pickup works |
 | `ACTIVE_LANES_FILE` | `~/.claude/active-lanes.json` | Optional sidecar map: slug → `{path, branch, repo, last_commit}`. Read by the TUI; tix never writes it. |
 | `LINEAR_WORKSPACE` | *(unset)* | Slug used to derive `linear:` URLs (`o` key) |
@@ -150,7 +150,7 @@ Full contract: [`docs/ticket-schema.md`](docs/ticket-schema.md).
 | `EDITOR` | `vi` | Used by `e` |
 | `PAGER` | `less` | Fallback when `glow` is absent |
 
-`TICKETS_DIR` resolves in this order: explicit env var → `~/.claude/tickets`. There is no in-binary project-local autodiscovery from a bare `cd`. Instead, `tix <project>` resolves the brief tree (centralized `~/.claude/tickets/<project>/` first, then `$TIX_CODE_DIR/<project>/.claude/tickets/`, then `./<project>/.claude/tickets/` for legacy trees) **and** chdirs into the project's git repo under `$TIX_CODE_DIR` (default `~/Documents/code`) so the pickup key (`p`) runs `wt` against the right repo. Or set `TICKETS_DIR` explicitly (e.g. via the `chpwd` hook above).
+`TICKETS_DIR` resolves in this order: explicit env var → `~/.pi/agent/tickets`. There is no in-binary project-local autodiscovery from a bare `cd`. Instead, `tix <project>` resolves the brief tree (centralized `~/.pi/agent/tickets/<project>/` first, legacy centralized `~/.claude/tickets/<project>/` second, then `$TIX_CODE_DIR/<project>/.claude/tickets/`, then `./<project>/.claude/tickets/` for legacy trees) **and** chdirs into the project's git repo under `$TIX_CODE_DIR` (default `~/Documents/code`) so the pickup key (`p`) runs `wt` against the right repo. Or set `TICKETS_DIR` explicitly (e.g. via the `chpwd` hook above).
 
 ## Preload hook
 
