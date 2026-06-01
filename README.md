@@ -50,9 +50,10 @@ tix
 Or point at a project tree:
 
 ```bash
-tix my-project           # browses ~/.pi/agent/tickets/my-project (centralized)
-                         # and chdirs into ~/Documents/code/my-project so
-                         # pickup (p) runs against the right repo
+tix my-project           # browses ~/.pi/agent/tickets/my-project plus
+                         # ~/.claude/tickets/my-project when both exist, and
+                         # chdirs into ~/Documents/code/my-project so pickup
+                         # (p) runs against the right repo
 TIX_CODE_DIR=~/src tix my-project   # override the code-repo lookup root
 TICKETS_DIR=./docs/tickets tix
 ```
@@ -142,7 +143,8 @@ Full contract: [`docs/ticket-schema.md`](docs/ticket-schema.md).
 
 | Env | Default | Purpose |
 |---|---|---|
-| `TICKETS_DIR` | `~/.pi/agent/tickets` | Root of the ticket tree |
+| `TICKETS_DIR` | `~/.pi/agent/tickets` | Primary ticket tree / write root |
+| `TIX_EXTRA_TICKETS_DIRS` | *(unset)* | Extra read roots, separated by `:` on macOS/Linux |
 | `TIX_CODE_DIR` | `~/Documents/code` | Lookup root for `tix <project>` — the repo it chdirs into so pickup works |
 | `ACTIVE_LANES_FILE` | `~/.claude/active-lanes.json` | Optional sidecar map: slug → `{path, branch, repo, last_commit}`. Read by the TUI; tix never writes it. |
 | `LINEAR_WORKSPACE` | *(unset)* | Slug used to derive `linear:` URLs (`o` key) |
@@ -150,7 +152,7 @@ Full contract: [`docs/ticket-schema.md`](docs/ticket-schema.md).
 | `EDITOR` | `vi` | Used by `e` |
 | `PAGER` | `less` | Fallback when `glow` is absent |
 
-`TICKETS_DIR` resolves in this order: explicit env var → `~/.pi/agent/tickets`. There is no in-binary project-local autodiscovery from a bare `cd`. Instead, `tix <project>` resolves the brief tree (centralized `~/.pi/agent/tickets/<project>/` first, legacy centralized `~/.claude/tickets/<project>/` second, then `$TIX_CODE_DIR/<project>/.claude/tickets/`, then `./<project>/.claude/tickets/` for legacy trees) **and** chdirs into the project's git repo under `$TIX_CODE_DIR` (default `~/Documents/code`) so the pickup key (`p`) runs `wt` against the right repo. Or set `TICKETS_DIR` explicitly (e.g. via the `chpwd` hook above).
+`TICKETS_DIR` resolves in this order: explicit env var → `~/.pi/agent/tickets`. When `TICKETS_DIR` points at a project under either `~/.pi/agent/tickets/<project>` or `~/.claude/tickets/<project>`, tix also reads the matching other-side project tree if it exists, so Pi-created and Claude-created tickets both surface. `tix <project>` resolves the primary write root (centralized `~/.pi/agent/tickets/<project>/` first, legacy centralized `~/.claude/tickets/<project>/` second, then `$TIX_CODE_DIR/<project>/.claude/tickets/`, then `./<project>/.claude/tickets/` for legacy trees), adds any other existing project roots as extra read roots, **and** chdirs into the project's git repo under `$TIX_CODE_DIR` (default `~/Documents/code`) so the pickup key (`p`) runs `wt` against the right repo. Or set `TICKETS_DIR` explicitly (e.g. via the `chpwd` hook above).
 
 ## Preload hook
 

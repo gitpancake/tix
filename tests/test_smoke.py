@@ -38,6 +38,53 @@ def test_tui_loads_tickets(monkeypatch):
     assert {"alpha", "beta"} <= slugs
 
 
+def test_tui_loads_extra_ticket_dirs(monkeypatch, tmp_path):
+    primary = tmp_path / "primary"
+    extra = tmp_path / "extra"
+    (primary / "integrations").mkdir(parents=True)
+    (extra / "integrations").mkdir(parents=True)
+    (primary / "integrations" / "claude-ticket.md").write_text(
+        "---\nstatus: open\ncreated: 2026-01-01T00:00:00Z\n---\n# claude\n",
+        encoding="utf-8",
+    )
+    (extra / "integrations" / "pi-ticket.md").write_text(
+        "---\nstatus: draft\ncreated: 2026-01-02T00:00:00Z\n---\n# pi\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TICKETS_DIR", str(primary))
+    monkeypatch.setenv("TIX_EXTRA_TICKETS_DIRS", str(extra))
+    for mod in ("tix.tui", "tix"):
+        sys.modules.pop(mod, None)
+
+    from tix import tui
+    tickets = tui.load_tickets()
+    slugs = {ticket.slug for ticket in tickets}
+    roots = {ticket.slug: ticket.ticket_dir for ticket in tickets}
+    assert {"claude-ticket", "pi-ticket"} <= slugs
+    assert roots["claude-ticket"] == primary
+    assert roots["pi-ticket"] == extra
+
+
+def test_pickup_env_uses_ticket_owning_root(monkeypatch, tmp_path):
+    primary = tmp_path / "primary"
+    extra = tmp_path / "extra"
+    (primary / "integrations").mkdir(parents=True)
+    (extra / "integrations").mkdir(parents=True)
+    (extra / "integrations" / "pi-ticket.md").write_text(
+        "---\nstatus: draft\ncreated: 2026-01-02T00:00:00Z\n---\n# pi\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TICKETS_DIR", str(primary))
+    monkeypatch.setenv("TIX_EXTRA_TICKETS_DIRS", str(extra))
+    for mod in ("tix.tui", "tix"):
+        sys.modules.pop(mod, None)
+
+    from tix import tui
+    ticket = next(ticket for ticket in tui.load_tickets() if ticket.slug == "pi-ticket")
+
+    assert tui.pickup_env(ticket)["TICKETS_DIR"] == str(extra)
+
+
 def test_preload_hook_runs_when_set(monkeypatch, tmp_path):
     _set_tickets_dir(monkeypatch)
     sentinel = tmp_path / "hook-ran"
@@ -78,7 +125,45 @@ def test_resolve_project_chdirs_into_code_repo(monkeypatch, tmp_path):
     from tix.__main__ import resolve_project
     assert resolve_project("proj") is True
     assert os.environ["TICKETS_DIR"] == str(central)
+    assert "TIX_EXTRA_TICKETS_DIRS" not in os.environ
     assert Path.cwd() == code_repo
+
+
+def test_resolve_project_includes_pi_and_claude_roots(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    pi_root = home / ".pi" / "agent" / "tickets" / "proj"
+    claude_root = home / ".claude" / "tickets" / "proj"
+    pi_root.mkdir(parents=True)
+    claude_root.mkdir(parents=True)
+    code_repo = tmp_path / "code" / "proj"
+    (code_repo / ".git").mkdir(parents=True)
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("TIX_CODE_DIR", str(tmp_path / "code"))
+    monkeypatch.delenv("TICKETS_DIR", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    from tix.__main__ import resolve_project
+    assert resolve_project("proj") is True
+    assert os.environ["TICKETS_DIR"] == str(pi_root)
+    assert os.environ["TIX_EXTRA_TICKETS_DIRS"] == str(claude_root)
+
+
+def test_configure_current_project_dirs_adds_pi_root(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    claude_root = home / ".claude" / "tickets" / "proj"
+    pi_root = home / ".pi" / "agent" / "tickets" / "proj"
+    claude_root.mkdir(parents=True)
+    pi_root.mkdir(parents=True)
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("TICKETS_DIR", str(claude_root))
+    monkeypatch.delenv("TIX_EXTRA_TICKETS_DIRS", raising=False)
+
+    from tix.__main__ import configure_current_project_dirs
+    configure_current_project_dirs()
+    assert os.environ["TICKETS_DIR"] == str(claude_root)
+    assert os.environ["TIX_EXTRA_TICKETS_DIRS"] == str(pi_root)
 
 
 def test_resolve_project_missing_returns_false(monkeypatch, tmp_path, capsys):

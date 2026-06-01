@@ -5,7 +5,7 @@
 `tix` is a keyboard-driven curses TUI over a tree of markdown ticket briefs. Stdlib-only Python. Single surface:
 
 - `src/tix/tui.py` — curses reader. Renders, filters, navigates, pickups.
-- `src/tix/__main__.py` — CLI router (default → TUI; `tix <project>` → resolve `~/.pi/agent/tickets/<project>/`, fallback through legacy `~/.claude/tickets/<project>/` / repo-local `.claude/tickets/`; sets `TICKETS_DIR` before the TUI imports).
+- `src/tix/__main__.py` — CLI router (default → TUI; `tix <project>` → resolve `~/.pi/agent/tickets/<project>/` as primary when present, include legacy `~/.claude/tickets/<project>/` / repo-local `.claude/tickets/` as extra read roots when present; sets `TICKETS_DIR`/`TIX_EXTRA_TICKETS_DIRS` before the TUI imports).
 
 **tix is a pure reader.** It does not write `status:` frontmatter. Users who want status auto-derived wire up their own script via `TIX_PRELOAD_HOOK`. That contract is load-bearing — do not bundle a reconciler.
 
@@ -16,6 +16,7 @@
 3. **Filename = slug.** Never derive a slug from frontmatter `id:` or filename munging. `path.stem` is authoritative.
 4. **Filesystem = DB.** No `.tix-cache`, no SQLite. `ACTIVE_LANES_FILE` is an *optional read-only* sidecar — tix consumes it if present (a preload hook might populate it) but never writes it itself.
 5. **Claude dispatch goes through `claude_argv()`.** `R` rescope / `n`,`N` new all hand off to interactive claude via `claude_argv(prompt)`, which defaults to `claude --dangerously-skip-permissions` (parity with `p` pickup, whose `wt` lane runs the same bypass). `WT_CLAUDE` overrides binary+flags — same env var `wt` honors. Don't reintroduce a bare `["claude", prompt]`: it drops the user into a permission-prompting session, breaking parity with pickup.
+6. **Pickup uses the ticket's owning root.** When a ticket was loaded from `TIX_EXTRA_TICKETS_DIRS`, `p` must pass that root as `TICKETS_DIR` to `wt`; otherwise `wt <slug>` creates a lane with no brief and Pi starts with no kickoff prompt.
 
 ## Status vocab (pinned)
 
@@ -28,16 +29,19 @@ Pre-migration title-case variants (`In Progress`, `Todo`, etc.) are kept as read
 
 ## TICKETS_DIR resolution
 
-Order: `$TICKETS_DIR` (explicit) → `~/.pi/agent/tickets` (fallback). No in-binary project autodiscovery from cwd.
+Order: `$TICKETS_DIR` (explicit) → `~/.pi/agent/tickets` (fallback). If `$TICKETS_DIR` names a project under `~/.pi/agent/tickets/<project>` or `~/.claude/tickets/<project>`, `__main__.py` adds the matching other-side project root as `TIX_EXTRA_TICKETS_DIRS` before importing the TUI. No broader in-binary project autodiscovery from cwd.
 
 The `tix <project>` form (`resolve_project` in `__main__.py`) does two things:
 
-**Picks the brief tree** (sets `TICKETS_DIR`):
+**Picks the primary brief tree** (sets `TICKETS_DIR`) and any extra read roots (`TIX_EXTRA_TICKETS_DIRS`). The list may render tickets from either root, but pickup rewrites `TICKETS_DIR` per ticket to the root that actually contains the selected brief:
+
 1. `~/.pi/agent/tickets/<project>/` if it exists (centralized — preferred)
 2. else `~/.claude/tickets/<project>/` (legacy centralized)
 3. else `$TIX_CODE_DIR/<project>/.claude/tickets/` (repo-local)
 4. else `./<project>/.claude/tickets/` (cwd-relative legacy)
 5. else error
+
+Every other existing project tree from that same candidate list is included as an extra read root, so Pi-created and Claude-created tickets both appear while writes still target the primary tree.
 
 **chdirs into the project's git repo** so pickup (`p` → `wt`) operates on the right repo — wt fails silently when cwd isn't a repo root. Lookup root is `$TIX_CODE_DIR` (default `~/Documents/code`); falls back to a cwd-relative `./<project>` repo for the legacy layout. The chdir is independent of which brief tree was chosen — centralized tickets + chdir into the code repo is the common case.
 

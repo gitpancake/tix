@@ -19,8 +19,33 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 TICKETS_DIR = Path(os.environ.get("TICKETS_DIR", Path.home() / ".pi" / "agent" / "tickets"))
+_EXTRA_TICKETS_DIRS = [
+    Path(raw).expanduser()
+    for raw in os.environ.get("TIX_EXTRA_TICKETS_DIRS", "").split(os.pathsep)
+    if raw
+]
+TICKET_DIRS = []
+for _ticket_dir in [TICKETS_DIR, *_EXTRA_TICKETS_DIRS]:
+    if _ticket_dir not in TICKET_DIRS:
+        TICKET_DIRS.append(_ticket_dir)
 LANES_FILE = Path(os.environ.get("ACTIVE_LANES_FILE",
                                  Path.home() / ".claude" / "active-lanes.json"))
+
+
+def ticket_dir_for_path(path):
+    for ticket_dir in TICKET_DIRS:
+        try:
+            path.relative_to(ticket_dir)
+            return ticket_dir
+        except ValueError:
+            continue
+    return TICKETS_DIR
+
+
+def pickup_env(ticket):
+    env = {**os.environ, "WT_NO_WATCH": os.environ.get("WT_NO_WATCH", "1")}
+    env["TICKETS_DIR"] = str(ticket.ticket_dir)
+    return env
 
 # Linear workspace slug — used to derive a ticket URL from its `linear:` id.
 # Set LINEAR_WORKSPACE in the environment; unset → no derived URL.
@@ -182,14 +207,15 @@ def dir_signature():
     a single bumped/added/removed file changes the sum, so tix can poll this
     cheaply on idle ticks and reload only when something actually changed."""
     total = 0
-    try:
-        for path in TICKETS_DIR.rglob("*.md"):
-            try:
-                total += path.stat().st_mtime_ns
-            except OSError:
-                continue
-    except OSError:
-        pass
+    for ticket_dir in TICKET_DIRS:
+        try:
+            for path in ticket_dir.rglob("*.md"):
+                try:
+                    total += path.stat().st_mtime_ns
+                except OSError:
+                    continue
+        except OSError:
+            pass
     return total
 
 
@@ -335,6 +361,7 @@ class Ticket:
     def __init__(self, path):
         fm = parse_frontmatter(path)
         self.path = path
+        self.ticket_dir = ticket_dir_for_path(path)
         self.is_epic = path.name == "_epic.md"
         # Legacy = pre-migration schema: carried `id:`, no `linear:`/`area:`.
         self.legacy = "id" in fm and "linear" not in fm and "area" not in fm
@@ -382,8 +409,10 @@ class Ticket:
 
 def load_tickets():
     tickets = []
-    if TICKETS_DIR.is_dir():
-        for path in sorted(TICKETS_DIR.rglob("*.md")):
+    for ticket_dir in TICKET_DIRS:
+        if not ticket_dir.is_dir():
+            continue
+        for path in sorted(ticket_dir.rglob("*.md")):
             if path.name in META_FILES:
                 continue
             # Skip other _*.md meta files, but keep _epic.md (the epic PRD).
@@ -466,9 +495,7 @@ def pickup_ticket(stdscr, ticket):
             write_status(ticket.path, "active")
             ticket.status = "active"
             run_pickup_git_sync()
-            wt_env = {**os.environ,
-                      "WT_NO_WATCH": os.environ.get("WT_NO_WATCH", "1")}
-            subprocess.run([wt, ticket.slug], env=wt_env)
+            subprocess.run([wt, ticket.slug], env=pickup_env(ticket))
     except (OSError, subprocess.SubprocessError):
         pass
     curses.reset_prog_mode()
@@ -1338,13 +1365,15 @@ def run_preload_hook():
 
 
 def main():
-    if not TICKETS_DIR.is_dir():
-        print(f"tix: no ticket directory at {TICKETS_DIR}", file=sys.stderr)
+    if not any(ticket_dir.is_dir() for ticket_dir in TICKET_DIRS):
+        roots = ", ".join(str(ticket_dir) for ticket_dir in TICKET_DIRS)
+        print(f"tix: no ticket directory at {roots}", file=sys.stderr)
         return 1
     run_preload_hook()
     app = App()
     if not app.tickets:
-        print(f"tix: no tickets found under {TICKETS_DIR}", file=sys.stderr)
+        roots = ", ".join(str(ticket_dir) for ticket_dir in TICKET_DIRS)
+        print(f"tix: no tickets found under {roots}", file=sys.stderr)
         return 1
     curses.wrapper(app.run)
     return 0

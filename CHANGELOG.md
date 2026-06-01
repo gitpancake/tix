@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] — 2026-06-01
+
+### Changed
+- Readers can now show both Pi-created and Claude-created project tickets at
+  once via `TIX_EXTRA_TICKETS_DIRS`.
+- `tix <project>` includes the matching Pi/Claude project tree as an extra read
+  root when both exist.
+
+### Fixed
+- Mini/main pickup now passes the selected ticket's owning root as `TICKETS_DIR`
+  to `wt`, so Pi tickets loaded from an extra root spawn with the brief prompt
+  instead of opening an idle lane.
+
 ## [0.3.5] — 2026-06-01
 
 ### Changed
@@ -92,4 +105,11 @@ Initial public release.
 - Status vocab pinned: `active`, `open`, `draft`, `done`, `cancelled`.
 - Frontmatter parser is line-based (no PyYAML).
 
+[0.3.6]: https://github.com/gitpancake/tix/releases/tag/v0.3.6
+[0.3.5]: https://github.com/gitpancake/tix/releases/tag/v0.3.5
+[0.3.2]: https://github.com/gitpancake/tix/releases/tag/v0.3.2
+[0.3.1]: https://github.com/gitpancake/tix/releases/tag/v0.3.1
+[0.3.0]: https://github.com/gitpancake/tix/releases/tag/v0.3.0
+[0.2.1]: https://github.com/gitpancake/tix/releases/tag/v0.2.1
+[0.2.0]: https://github.com/gitpancake/tix/releases/tag/v0.2.0
 [0.1.0]: https://github.com/gitpancake/tix/releases/tag/v0.1.0

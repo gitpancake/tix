@@ -14,7 +14,7 @@ from .tui import (
     CANCELLED_STATUSES,
     DEFAULT_STATUS_META,
     STATUS_META,
-    TICKETS_DIR,
+    TICKET_DIRS,
     dir_signature,
     load_tickets,
     open_in_pager,
@@ -241,8 +241,9 @@ def _run(stdscr):
 
 
 def main():
-    if not TICKETS_DIR.is_dir():
-        print(f"tix: no ticket directory at {TICKETS_DIR}", file=sys.stderr)
+    if not any(ticket_dir.is_dir() for ticket_dir in TICKET_DIRS):
+        roots = ", ".join(str(ticket_dir) for ticket_dir in TICKET_DIRS)
+        print(f"tix: no ticket directory at {roots}", file=sys.stderr)
         return 1
     run_preload_hook()
     # No empty-tree bail: mini is meant to sit open as a sidecar, so it must
