@@ -45,6 +45,29 @@ def test_build_rows_sorts_newest_first(monkeypatch, tmp_path):
     assert "no-date" in slugs
 
 
+def test_mini_set_label_writes_frontmatter(monkeypatch, tmp_path):
+    tree = tmp_path / "tickets"
+    (tree / "area").mkdir(parents=True)
+    brief = tree / "area" / "labeled.md"
+    brief.write_text(
+        "---\nstatus: open\ncreated: 2026-05-01T00:00:00Z\n---\n# labeled\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TICKETS_DIR", str(tree))
+    for mod in ("tix.mini", "tix.tui", "tix"):
+        sys.modules.pop(mod, None)
+
+    from tix import mini, tui
+    ticket = tui.load_tickets()[0]
+    mini._set_label(ticket, "ops")
+    assert ticket.label == "ops"
+    assert "label: ops" in brief.read_text(encoding="utf-8")
+
+    mini._set_label(ticket, "")
+    assert ticket.label == ""
+    assert "label:" not in brief.read_text(encoding="utf-8")
+
+
 def test_build_rows_hides_done_and_cancelled(monkeypatch, tmp_path):
     tree = tmp_path / "tickets"
     (tree / "area").mkdir(parents=True)

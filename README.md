@@ -87,8 +87,8 @@ tix my-project --mini   # same project resolution as `tix <project>`
 
 Mini surfaces a single signal — *what was filed recently, can I pick one
 up* — and gets out of the way. Done/cancelled hidden; `↑`/`↓` move, `Enter`
-opens in `glow`/`$PAGER`, `p` spawns `wt`, `q` quits. No filters, no
-groups, no rescope — use plain `tix` for that.
+opens in `glow`/`$PAGER`, `p` spawns `wt`, `l` sets/clears `label:`, `q`
+quits. No filters, no groups, no rescope — use plain `tix` for that.
 
 ## Keys
 

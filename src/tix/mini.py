@@ -21,6 +21,7 @@ from .tui import (
     pickup_ticket,
     relative_age,
     run_preload_hook,
+    write_label,
     write_status,
 )
 
@@ -79,6 +80,12 @@ def _toggle_status(ticket, ch):
     ticket.status = new
 
 
+def _set_label(ticket, label):
+    label = label.strip()
+    write_label(ticket.path, label)
+    ticket.label = label
+
+
 def _init_colors():
     """Mirror tui.App.init_colors — same palette so mini matches the main UI."""
     colors = {}
@@ -126,16 +133,26 @@ def _draw(stdscr, rows, sel, top, colors):
         color_attr = colors.get(color_name, 0)
         age = relative_age(t.created) or ""
         age_pad = f"{age:>4}"
-        # Layout: icon (col 0) + space + title + right-aligned age.
+        label_tag = f"#{t.label[:14]}" if t.label else ""
+        # Layout: icon + title, then optional label + right-aligned age.
         age_x = max(0, w - len(age_pad) - 1)
         title_x = 2
-        title_w = max(0, age_x - title_x - 1)
+        label_x = age_x - len(label_tag) - 1 if label_tag else age_x
+        if label_tag and label_x <= title_x:
+            label_tag = ""
+            label_x = age_x
+        title_w = max(0, label_x - title_x - 1)
         sel_attr = curses.A_REVERSE if idx == sel else 0
         try:
             if idx == sel:
                 stdscr.addstr(i, 0, " " * (w - 1), sel_attr)
             stdscr.addstr(i, 0, icon, sel_attr | color_attr | curses.A_BOLD)
             stdscr.addstr(i, title_x, t.title[:title_w], sel_attr | color_attr)
+            if label_tag:
+                stdscr.addstr(
+                    i, label_x, label_tag,
+                    sel_attr | colors.get("muted", 0) | curses.A_DIM,
+                )
             stdscr.addstr(
                 i, age_x, age_pad,
                 sel_attr | colors.get("muted", 0) | curses.A_DIM,
@@ -144,11 +161,26 @@ def _draw(stdscr, rows, sel, top, colors):
             pass
     # Footer hint.
     if h >= 1:
-        hint = "↑↓ ⏎ · p pickup · i/d/x status · q quit"
+        hint = "↑↓ ⏎ · p pickup · l label · i/d/x status · q quit"
         try:
             stdscr.addstr(h - 1, 0, hint[: max(0, w - 1)], curses.A_DIM)
         except curses.error:
             pass
+    stdscr.refresh()
+
+
+def _draw_label_prompt(stdscr, ticket, label_buffer):
+    h, w = stdscr.getmaxyx()
+    if h < 1:
+        return
+    y = h - 1
+    prompt = f"label `{ticket.slug}`: {label_buffer}"
+    try:
+        stdscr.addstr(y, 0, " " * max(0, w - 1), curses.A_REVERSE)
+        stdscr.addstr(y, 0, prompt[: max(0, w - 1)], curses.A_REVERSE)
+        stdscr.move(y, min(len(prompt), max(0, w - 1)))
+    except curses.error:
+        pass
     stdscr.refresh()
 
 
@@ -162,6 +194,8 @@ def _run(stdscr):
     rows = build_rows(load_tickets())
     sel = 0
     top = 0
+    label_ticket = None
+    label_buffer = ""
     while True:
         # Re-apply the 2 s idle timeout every iter. open_in_pager / pickup_ticket
         # suspend curses (def_prog_mode/endwin/reset_prog_mode) and some terminals
@@ -177,8 +211,15 @@ def _run(stdscr):
             top = sel - body_h + 1
         top = max(0, min(top, max(0, len(rows) - body_h)))
         _draw(stdscr, rows, sel, top, colors)
+        if label_ticket is None:
+            curses.curs_set(0)
+        else:
+            curses.curs_set(1)
+            _draw_label_prompt(stdscr, label_ticket, label_buffer)
         ch = stdscr.getch()
         if ch == -1:
+            if label_ticket is not None:
+                continue
             new_sig = dir_signature()
             if new_sig != dir_sig:
                 prev_path = rows[sel].path if rows else None
@@ -195,6 +236,28 @@ def _run(stdscr):
                         sel = min(sel, max(0, len(rows) - 1))
                 else:
                     sel = 0
+            continue
+        if label_ticket is not None:
+            if ch in (27, 3):  # esc / Ctrl-C — cancel
+                label_ticket = None
+                label_buffer = ""
+            elif ch in (curses.KEY_ENTER, 10, 13):
+                ticket = label_ticket
+                _set_label(ticket, label_buffer)
+                label_ticket = None
+                label_buffer = ""
+                dir_sig = dir_signature()
+                rows = build_rows(load_tickets())
+                for i, t in enumerate(rows):
+                    if t.path == ticket.path:
+                        sel = i
+                        break
+                else:
+                    sel = min(sel, max(0, len(rows) - 1))
+            elif ch in (curses.KEY_BACKSPACE, 127, 8):
+                label_buffer = label_buffer[:-1]
+            elif 32 <= ch < 127:
+                label_buffer += chr(ch)
             continue
         if ch in (ord("q"), 27, 3):  # q / esc / Ctrl-C
             return
@@ -226,6 +289,9 @@ def _run(stdscr):
                     break
             else:
                 sel = min(sel, max(0, len(rows) - 1))
+        elif ch == ord("l"):
+            label_ticket = rows[sel]
+            label_buffer = label_ticket.label
         elif ch in (ord("i"), ord("d"), ord("x")):
             ticket = rows[sel]
             _toggle_status(ticket, ch)
