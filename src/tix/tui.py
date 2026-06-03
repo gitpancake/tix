@@ -121,7 +121,7 @@ NAVIGATION
   g              jump to top
   G              jump to bottom
   ← / h          collapse current group
-  → / l / ⏎      open ticket in glow (or expand group)
+  → / ⏎          open ticket in glow (or expand group)
   space          toggle current group
   C / z          collapse / expand all groups
 
@@ -143,6 +143,7 @@ TICKET ACTIONS
   i              toggle in-progress (sticky: pins `active` without a lane)
   d              toggle done   (sticky: trumps reconciler)
   x              toggle cancel (sticky terminal; ticket hides from default views)
+  l              set/clear label (type label, ⏎ save, blank clears)
   m              move ticket to a different area (numeric pick)
   o              open the ticket's URL (legacy linear: field)
   r              force reload (also auto-reloads every 2s on tickets-dir change)
@@ -275,6 +276,10 @@ def write_priority(path, new_priority):
     write_frontmatter_field(path, "priority", new_priority)
 
 
+def write_label(path, new_label):
+    write_frontmatter_field(path, "label", new_label)
+
+
 def write_status(path, new_status):
     write_frontmatter_field(path, "status", new_status)
 
@@ -375,6 +380,7 @@ class Ticket:
         self.status = fm.get("status", "").strip() or ("open" if self.is_epic else "")
         # Priority is optional; missing = unprioritized (sorted last).
         self.priority = fm.get("priority", "").strip().upper()
+        self.label = fm.get("label", "").strip()
         # URL is derived from `linear:` when LINEAR_WORKSPACE is set; a legacy
         # stored `url:` is the fallback.
         self.url = (f"https://linear.app/{LINEAR_WORKSPACE}/issue/{self.linear}"
@@ -513,6 +519,9 @@ class App:
         # move_mode is None or the Ticket awaiting an area pick from the footer
         # minibuffer (`m` enters; 1-N commits; esc cancels).
         self.move_mode = None
+        # label_mode is None or the Ticket awaiting free-text label input.
+        self.label_mode = None
+        self.label_buffer = ""
         # sort_pick_idx is None outside the sort picker; while picking, holds the
         # candidate index into SORT_MODES (↑↓ adjusts, ⏎ commits, esc cancels).
         self.sort_mode = "priority"
@@ -572,7 +581,7 @@ class App:
             return False
         if self.query:
             q = self.query.lower()
-            hay = (t.id + " " + t.title + " " + t.group + " " + t.area).lower()
+            hay = (t.id + " " + t.title + " " + t.group + " " + t.area + " " + t.label).lower()
             if q not in hay:
                 return False
         return True
@@ -700,7 +709,7 @@ class App:
             self._put(stdscr, y, x0, f"pickup: wt {t.slug}"[:w],
                       self.attr("accent", curses.A_DIM), maxx=x0 + w)
             y += 1
-        meta_bits = [b for b in (t.area, t.status, t.priority) if b]
+        meta_bits = [b for b in (t.area, t.status, t.priority, f"#{t.label}" if t.label else "") if b]
         if meta_bits:
             color = t.meta[1] if not t.is_epic else "accent"
             self._put(stdscr, y, x0, (" · ".join(meta_bits))[:w],
@@ -813,11 +822,16 @@ class App:
         prio_color = PRIORITY_META.get(t.priority, (None, "muted"))[1]
         age = relative_age(t.created)
         age_pad = f"{age:>4}"  # fixed-width so the status column stays aligned
-        # Right-aligned layout: status flush right, then age (4ch + 1 space gap).
+        label_tag = f"#{t.label[:16]}" if t.label else ""
+        # Right-aligned layout: status flush right, then age, then label.
         status_x = max(0, w - len(status) - 1)
         age_x = max(0, status_x - len(age_pad) - 1)
         title_x = 7 + len(id_col) + 1
-        avail = max(0, age_x - title_x - 1)
+        label_x = age_x - len(label_tag) - 1 if label_tag else age_x
+        if label_tag and label_x <= title_x:
+            label_tag = ""
+            label_x = age_x
+        avail = max(0, label_x - title_x - 1)
         if selected:
             self._put(stdscr, y, 0, " " * (w - 1), curses.A_REVERSE, maxx=w)
             base = curses.A_REVERSE
@@ -826,6 +840,8 @@ class App:
                       base | curses.A_BOLD, maxx=w)
             self._put(stdscr, y, 7, id_col, base | curses.A_BOLD, maxx=w)
             self._put(stdscr, y, title_x, t.title[:avail], base, maxx=w)
+            if label_tag:
+                self._put(stdscr, y, label_x, label_tag, base | curses.A_DIM, maxx=w)
             self._put(stdscr, y, age_x, age_pad, base | curses.A_DIM, maxx=w)
             self._put(stdscr, y, status_x, status,
                       base | curses.A_DIM, maxx=w)
@@ -835,6 +851,9 @@ class App:
                       self.attr(prio_color, curses.A_BOLD), maxx=w)
             self._put(stdscr, y, 7, id_col, curses.A_DIM, maxx=w)
             self._put(stdscr, y, title_x, t.title[:avail], maxx=w)
+            if label_tag:
+                self._put(stdscr, y, label_x, label_tag,
+                          self.attr("accent", curses.A_DIM), maxx=w)
             self._put(stdscr, y, age_x, age_pad,
                       self.attr("muted", curses.A_DIM), maxx=w)
             self._put(stdscr, y, status_x, status,
@@ -848,6 +867,15 @@ class App:
             self._put(stdscr, y, 0, " " * (w - 1), curses.A_REVERSE)
             self._put(stdscr, y, 0, text[:w],
                       self.attr("accent", curses.A_REVERSE | curses.A_BOLD))
+            return
+        if self.label_mode is not None:
+            prompt = f" label `{self.label_mode.slug}`: {self.label_buffer}"
+            self._put(stdscr, y, 0, " " * (w - 1), curses.A_REVERSE)
+            self._put(stdscr, y, 0, prompt[:w], curses.A_REVERSE)
+            try:
+                stdscr.move(y, min(len(prompt), w - 1))
+            except curses.error:
+                pass
             return
         if self.sort_pick_idx is not None:
             self._put(stdscr, y, 0, " " * (w - 1), curses.A_REVERSE)
@@ -876,7 +904,7 @@ class App:
                 pass
             return
         sort_label = SORT_LABELS.get(self.sort_mode, self.sort_mode)
-        hints = (f"⏎ open · p pickup · e edit · R rescope · n new · m move · "
+        hints = (f"⏎ open · p pickup · e edit · R rescope · n new · l label · m move · "
                  f"+/− prio · i wip · d done · x cancel · s sort({sort_label}) "
                  f"· ? help · q quit")
         if self.query:
@@ -1153,6 +1181,14 @@ class App:
         self.rebuild()
         self.reselect_path(path)
 
+    def set_label(self, ticket, label):
+        label = label.strip()
+        write_label(ticket.path, label)
+        ticket.label = label
+        path = ticket.path
+        self.rebuild()
+        self.reselect_path(path)
+
     def bump_priority(self, ticket, delta):
         """delta > 0 raises priority (toward P0); delta < 0 lowers it toward
         cleared. Writes frontmatter, then rebuilds so the new sort takes."""
@@ -1181,13 +1217,28 @@ class App:
         while True:
             h, _ = stdscr.getmaxyx()
             body_h = max(1, h - 2)
-            curses.curs_set(1 if self.search_mode else 0)
+            curses.curs_set(1 if self.search_mode or self.label_mode is not None else 0)
             self.draw(stdscr)
             ch = stdscr.getch()
             if ch == -1:
                 new_sig = dir_signature()
                 if new_sig != self._dir_sig:
                     self.reload()
+                continue
+            if self.label_mode is not None:
+                if ch == 27:  # esc — cancel
+                    self.label_mode = None
+                    self.label_buffer = ""
+                elif ch in (curses.KEY_ENTER, 10, 13):
+                    ticket = self.label_mode
+                    label = self.label_buffer
+                    self.label_mode = None
+                    self.label_buffer = ""
+                    self.set_label(ticket, label)
+                elif ch in (curses.KEY_BACKSPACE, 127, 8):
+                    self.label_buffer = self.label_buffer[:-1]
+                elif 32 <= ch < 127:
+                    self.label_buffer += chr(ch)
                 continue
             if self.move_mode is not None:
                 ticket = self.move_mode
@@ -1234,7 +1285,7 @@ class App:
                 self.sel = 0
             elif ch == ord("G"):
                 self.sel = max(0, len(self.rows) - 1)
-            elif ch in (curses.KEY_ENTER, 10, 13, curses.KEY_RIGHT, ord("l")):
+            elif ch in (curses.KEY_ENTER, 10, 13, curses.KEY_RIGHT):
                 self.activate(stdscr)
             elif ch == ord(" "):
                 row = self.current()
@@ -1302,6 +1353,11 @@ class App:
                 row = self.current()
                 if row and row["type"] == "ticket":
                     self.toggle_inprogress(row["ticket"])
+            elif ch == ord("l"):
+                row = self.current()
+                if row and row["type"] == "ticket":
+                    self.label_mode = row["ticket"]
+                    self.label_buffer = row["ticket"].label
             elif ch == ord("m"):
                 row = self.current()
                 if row and row["type"] == "ticket":

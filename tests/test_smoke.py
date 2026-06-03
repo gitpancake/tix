@@ -38,6 +38,34 @@ def test_tui_loads_tickets(monkeypatch):
     assert {"alpha", "beta"} <= slugs
 
 
+def test_ticket_label_round_trip_and_search(monkeypatch, tmp_path):
+    tree = tmp_path / "tickets"
+    (tree / "integrations").mkdir(parents=True)
+    brief = tree / "integrations" / "labeled.md"
+    brief.write_text(
+        "---\nstatus: open\nlabel: backend\ncreated: 2026-01-01T00:00:00Z\n---\n# labeled\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TICKETS_DIR", str(tree))
+    for mod in ("tix.tui", "tix"):
+        sys.modules.pop(mod, None)
+
+    from tix import tui
+    ticket = tui.load_tickets()[0]
+    assert ticket.label == "backend"
+
+    app = tui.App()
+    app.query = "backend"
+    app.rebuild_rows()
+    assert [row["ticket"].slug for row in app.rows if row["type"] == "ticket"] == ["labeled"]
+
+    app.set_label(ticket, "frontend")
+    assert "label: frontend" in brief.read_text(encoding="utf-8")
+
+    app.set_label(ticket, "")
+    assert "label:" not in brief.read_text(encoding="utf-8")
+
+
 def test_tui_loads_extra_ticket_dirs(monkeypatch, tmp_path):
     primary = tmp_path / "primary"
     extra = tmp_path / "extra"

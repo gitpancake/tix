@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.7] — 2026-06-03
+
+### Added
+- Main TUI tickets now support an optional `label:` frontmatter field. Press
+  `l`, type a one-line label, and press Enter to save; blank input clears it.
+- Labels render as `#label` in the list and preview, and text search matches
+  label values.
+
 ## [0.3.6] — 2026-06-01
 
 ### Changed

@@ -97,7 +97,7 @@ groups, no rescope — use plain `tix` for that.
 | `↑` `↓` / `j` `k` | Move |
 | `Ctrl-U` `Ctrl-D` | Half page |
 | `g` `G` | Top / bottom |
-| `Enter` `→` `l` | Open in `glow` (or `$PAGER`) |
+| `Enter` `→` | Open in `glow` (or `$PAGER`) |
 | `Esc` `←` `h` | Collapse / back |
 | `/` | Filter |
 | `e` | Edit in `$EDITOR` |
@@ -105,6 +105,7 @@ groups, no rescope — use plain `tix` for that.
 | `i` | Pin status `active` |
 | `d` | Pin status `done` |
 | `x` | Pin status `cancelled` |
+| `l` | Set/clear `label:` |
 | `m` | Move ticket to area |
 | `y` | Copy slug to clipboard |
 | `o` | Open Linear URL (if `linear:` set) |
@@ -120,6 +121,7 @@ A ticket is a markdown file with YAML-ish line-based frontmatter:
 ---
 status: open
 priority: P1
+label: backend
 area: integrations
 linear: PROJ-123
 ---

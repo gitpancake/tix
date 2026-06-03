@@ -59,6 +59,7 @@ area or just an epic that belongs inside an existing one.
 ---
 status: open               # active | open | draft | done | cancelled
 priority: P1               # P0 | P1 | P2 | P3 (blank = unprioritized)
+label: backend             # optional one-line display/filter tag
 area: integrations         # one of the configured areas
 linear: PROJ-123           # optional external-tracker breadcrumb
 parent: <epic-slug>        # only on epic children
@@ -95,6 +96,12 @@ Hand-driven, unlike status. Buckets are `P0` (drop everything) → `P3`
 (eventually); blank sorts last. Within each group `tix` sorts by priority then
 status, so P0/P1 work bubbles to the top. Edit the frontmatter directly or use
 `+`/`−` from the TUI.
+
+### Label
+
+Optional free-text tag for lightweight grouping/filtering. Keep it one line.
+Set or clear it from the TUI with `l` (blank input clears the field). Labels
+render as `#label` in the list and preview pane.
 
 ## Epic shape
 
