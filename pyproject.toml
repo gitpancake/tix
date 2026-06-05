@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tix-cli"
-version = "0.3.9"
+version = "0.3.10"
 description = "Keyboard-driven terminal ticket explorer for a tree of markdown briefs."
 readme = "README.md"
 requires-python = ">=3.8"

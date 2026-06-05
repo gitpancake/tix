@@ -18,6 +18,7 @@ from .tui import (
     dir_signature,
     load_tickets,
     open_in_pager,
+    pickup_agent_label,
     pickup_ticket,
     relative_age,
     run_preload_hook,
@@ -159,9 +160,11 @@ def _draw(stdscr, rows, sel, top, colors):
             )
         except curses.error:
             pass
-    # Footer hint.
+    # Footer hint. Surfaces the agent `p` will spawn for the selected ticket
+    # (per TIX_PICKUP_AGENTS) so routing is visible in the narrow reader too.
     if h >= 1:
-        hint = "↑↓ ⏎ · p pickup · l label · i/d/x status · q quit"
+        agent = pickup_agent_label(rows[sel].path) if rows else "pi"
+        hint = f"↑↓ ⏎ · p pickup→{agent} · l label · i/d/x status · q quit"
         try:
             stdscr.addstr(h - 1, 0, hint[: max(0, w - 1)], curses.A_DIM)
         except curses.error:

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.10] — 2026-06-04
+
+### Added
+- Mini reader's footer now shows the agent `p` will spawn for the selected
+  ticket (`p pickup→pi` / `p pickup→claude-lane`), matching the main TUI's
+  `pickup:` line. Pickup routing (`TIX_PICKUP_AGENTS`, 0.3.9) already applied
+  to mini via the shared `pickup_ticket`; this surfaces it in the narrow view.
+
 ## [0.3.9] — 2026-06-04
 
 ### Added
