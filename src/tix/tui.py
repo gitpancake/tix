@@ -31,6 +31,19 @@ for _ticket_dir in [TICKETS_DIR, *_EXTRA_TICKETS_DIRS]:
 LANES_FILE = Path(os.environ.get("ACTIVE_LANES_FILE",
                                  Path.home() / ".claude" / "active-lanes.json"))
 
+# Per-ticket-dir agent launcher for pickup. Format (TIX_PICKUP_AGENTS):
+#   <ticket-root>=<agent-cmd>[<pathsep><ticket-root>=<agent-cmd>...]
+# When a picked-up ticket lives under <ticket-root>, `wt` is invoked with
+# WT_AGENT_CMD=<agent-cmd> instead of its own default. Lets one board route
+# Pi-home tickets to Pi (no entry → wt default) and Claude-home tickets to a
+# Claude lane launcher. Longest-ancestor match wins, so project-scoped roots
+# (e.g. ~/.claude/tickets/<project>) still resolve against ~/.claude/tickets.
+_PICKUP_AGENTS = []
+for _raw in os.environ.get("TIX_PICKUP_AGENTS", "").split(os.pathsep):
+    if "=" in _raw:
+        _root, _cmd = _raw.split("=", 1)
+        _PICKUP_AGENTS.append((Path(_root).expanduser(), _cmd))
+
 
 def ticket_dir_for_path(path):
     for ticket_dir in TICKET_DIRS:
@@ -42,9 +55,42 @@ def ticket_dir_for_path(path):
     return TICKETS_DIR
 
 
+def pickup_agent_cmd(path):
+    """Agent launch command for a ticket at `path`, or None for wt's default.
+    Picks the TIX_PICKUP_AGENTS entry whose root is the deepest ancestor."""
+    best_root = None
+    best_cmd = None
+    for root, cmd in _PICKUP_AGENTS:
+        try:
+            path.relative_to(root)
+        except ValueError:
+            continue
+        if best_root is None or len(root.parts) > len(best_root.parts):
+            best_root, best_cmd = root, cmd
+    return best_cmd
+
+
+def pickup_agent_label(path):
+    """Short name of the agent `p` will spawn for a ticket: the basename of the
+    launcher in its TIX_PICKUP_AGENTS command (skipping VAR=val env prefixes),
+    or 'pi' when no entry matches (wt's own default)."""
+    cmd = pickup_agent_cmd(path)
+    if not cmd:
+        return "pi"
+    for tok in shlex.split(cmd):
+        if "=" in tok and not tok.startswith("/") and " " not in tok.split("=", 1)[0]:
+            continue
+        return Path(tok).name
+    return "pi"
+
+
 def pickup_env(ticket):
     env = {**os.environ, "WT_NO_WATCH": os.environ.get("WT_NO_WATCH", "1")}
     env["TICKETS_DIR"] = str(ticket.ticket_dir)
+    if "WT_AGENT_CMD" not in os.environ:
+        cmd = pickup_agent_cmd(ticket.path)
+        if cmd:
+            env["WT_AGENT_CMD"] = cmd
     return env
 
 # Linear workspace slug — used to derive a ticket URL from its `linear:` id.
@@ -133,7 +179,7 @@ FILTER + SEARCH
                    modes: priority (default), date (newest first)
 
 TICKET ACTIONS
-  p              pickup → mark active + wt <slug>
+  p              pickup → mark active + wt <slug> (agent per TIX_PICKUP_AGENTS)
                  (suspend curses, run, return)
   e              edit brief in $EDITOR; reload after
   R              rescope → $EDITOR scratch → claude "/rescope <slug> <text>"
@@ -706,7 +752,7 @@ class App:
         y += 1
         # Pickup slug — exact arg for `wt`/`/pickup`. Surfaces what `p` will run.
         if y - y0 < h:
-            self._put(stdscr, y, x0, f"pickup: wt {t.slug}"[:w],
+            self._put(stdscr, y, x0, f"pickup: wt {t.slug} → {pickup_agent_label(t.path)}"[:w],
                       self.attr("accent", curses.A_DIM), maxx=x0 + w)
             y += 1
         meta_bits = [b for b in (t.area, t.status, t.priority, f"#{t.label}" if t.label else "") if b]

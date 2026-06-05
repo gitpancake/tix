@@ -147,6 +147,7 @@ Full contract: [`docs/ticket-schema.md`](docs/ticket-schema.md).
 |---|---|---|
 | `TICKETS_DIR` | `~/.pi/agent/tickets` | Primary ticket tree / write root |
 | `TIX_EXTRA_TICKETS_DIRS` | *(unset)* | Extra read roots, separated by `:` on macOS/Linux |
+| `TIX_PICKUP_AGENTS` | *(unset)* | Per-root agent launcher for `p`: `<root>=<cmd>` pairs, separated by `:`. When a picked-up ticket lives under `<root>`, `wt` runs with `WT_AGENT_CMD=<cmd>`. No match → wt's own default. Longest-ancestor root wins. An explicit `WT_AGENT_CMD` in the environment overrides the map. |
 | `TIX_CODE_DIR` | `~/Documents/code` | Lookup root for `tix <project>` — the repo it chdirs into so pickup works |
 | `ACTIVE_LANES_FILE` | `~/.claude/active-lanes.json` | Optional sidecar map: slug → `{path, branch, repo, last_commit}`. Read by the TUI; tix never writes it. |
 | `LINEAR_WORKSPACE` | *(unset)* | Slug used to derive `linear:` URLs (`o` key) |

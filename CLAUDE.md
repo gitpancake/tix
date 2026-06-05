@@ -17,6 +17,7 @@
 4. **Filesystem = DB.** No `.tix-cache`, no SQLite. `ACTIVE_LANES_FILE` is an *optional read-only* sidecar — tix consumes it if present (a preload hook might populate it) but never writes it itself.
 5. **Claude dispatch goes through `claude_argv()`.** `R` rescope / `n`,`N` new all hand off to interactive claude via `claude_argv(prompt)`, which defaults to `claude --dangerously-skip-permissions` (parity with `p` pickup, whose `wt` lane runs the same bypass). `WT_CLAUDE` overrides binary+flags — same env var `wt` honors. Don't reintroduce a bare `["claude", prompt]`: it drops the user into a permission-prompting session, breaking parity with pickup.
 6. **Pickup uses the ticket's owning root.** When a ticket was loaded from `TIX_EXTRA_TICKETS_DIRS`, `p` must pass that root as `TICKETS_DIR` to `wt`; otherwise `wt <slug>` creates a lane with no brief and Pi starts with no kickoff prompt.
+7. **Pickup agent routing is policy-via-env.** `TIX_PICKUP_AGENTS` (a `<root>=<cmd>` map) decides which launcher `p` hands the lane to by setting `WT_AGENT_CMD` on the `wt` env. tix only *routes* — it picks the deepest-ancestor root and never invents a command. An explicit `WT_AGENT_CMD` already in the environment must win (caller override). No match → leave `WT_AGENT_CMD` unset so `wt` uses its own default. Don't hardcode pi/claude binaries in the routing layer; the consuming dotfiles own the policy.
 
 ## Status vocab (pinned)
 

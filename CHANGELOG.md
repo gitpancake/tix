@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.9] — 2026-06-04
+
+### Added
+- `TIX_PICKUP_AGENTS` routes the pickup key (`p`) to a different agent launcher
+  per ticket root: `<root>=<cmd>` pairs (`:`-separated). A picked-up ticket
+  under `<root>` makes `wt` run with `WT_AGENT_CMD=<cmd>`; no match falls
+  through to wt's own default. Longest-ancestor root wins, so project-scoped
+  roots still resolve. An explicit `WT_AGENT_CMD` already in the environment
+  overrides the map. The detail view's `pickup:` line now shows the resolved
+  agent (`→ pi` / `→ claude-lane`). Lets one board send Pi-home tickets to Pi
+  and Claude-home tickets to a Claude lane launcher.
+
 ## [0.3.8] — 2026-06-03
 
 ### Added

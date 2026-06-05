@@ -113,6 +113,58 @@ def test_pickup_env_uses_ticket_owning_root(monkeypatch, tmp_path):
     assert tui.pickup_env(ticket)["TICKETS_DIR"] == str(extra)
 
 
+def test_pickup_env_routes_agent_cmd_by_root(monkeypatch, tmp_path):
+    claude_root = tmp_path / "claude" / "tickets"
+    pi_root = tmp_path / "pi" / "agent" / "tickets"
+    (claude_root / "platform").mkdir(parents=True)
+    (pi_root / "platform").mkdir(parents=True)
+    (claude_root / "platform" / "claude-ticket.md").write_text(
+        "---\nstatus: open\ncreated: 2026-01-01T00:00:00Z\n---\n# claude\n",
+        encoding="utf-8",
+    )
+    (pi_root / "platform" / "pi-ticket.md").write_text(
+        "---\nstatus: draft\ncreated: 2026-01-02T00:00:00Z\n---\n# pi\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TICKETS_DIR", str(claude_root))
+    monkeypatch.setenv("TIX_EXTRA_TICKETS_DIRS", str(pi_root))
+    # Only the Claude root gets an override; Pi falls through to wt's default.
+    monkeypatch.setenv("TIX_PICKUP_AGENTS", f"{claude_root}=claude-lane --model opus")
+    monkeypatch.delenv("WT_AGENT_CMD", raising=False)
+    for mod in ("tix.tui", "tix"):
+        sys.modules.pop(mod, None)
+
+    from tix import tui
+    by_slug = {ticket.slug: ticket for ticket in tui.load_tickets()}
+
+    claude_env = tui.pickup_env(by_slug["claude-ticket"])
+    assert claude_env["WT_AGENT_CMD"] == "claude-lane --model opus"
+    assert tui.pickup_agent_label(by_slug["claude-ticket"].path) == "claude-lane"
+
+    pi_env = tui.pickup_env(by_slug["pi-ticket"])
+    assert "WT_AGENT_CMD" not in pi_env
+    assert tui.pickup_agent_label(by_slug["pi-ticket"].path) == "pi"
+
+
+def test_pickup_agents_respects_preset_wt_agent_cmd(monkeypatch, tmp_path):
+    claude_root = tmp_path / "claude" / "tickets"
+    (claude_root / "platform").mkdir(parents=True)
+    (claude_root / "platform" / "claude-ticket.md").write_text(
+        "---\nstatus: open\ncreated: 2026-01-01T00:00:00Z\n---\n# claude\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TICKETS_DIR", str(claude_root))
+    monkeypatch.setenv("TIX_PICKUP_AGENTS", f"{claude_root}=claude-lane --model opus")
+    monkeypatch.setenv("WT_AGENT_CMD", "pi --model preset")
+    for mod in ("tix.tui", "tix"):
+        sys.modules.pop(mod, None)
+
+    from tix import tui
+    ticket = tui.load_tickets()[0]
+    # An explicit WT_AGENT_CMD in the environment wins over the per-root map.
+    assert tui.pickup_env(ticket)["WT_AGENT_CMD"] == "pi --model preset"
+
+
 def test_preload_hook_runs_when_set(monkeypatch, tmp_path):
     _set_tickets_dir(monkeypatch)
     sentinel = tmp_path / "hook-ran"
