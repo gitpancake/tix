@@ -113,9 +113,10 @@ META_FILES = {"README.md", "_TEMPLATE.md", "_EPIC-TEMPLATE.md", "_CHILD-TEMPLATE
 # schema ($TICKETS_DIR/README.md); title-case keys are legacy (pre-migration).
 STATUS_META = {
     "active":      ("◐", "inprogress", 0),
-    "open":        ("○", "todo", 1),
-    "draft":       ("◌", "backlog", 2),
-    "done":        ("●", "done", 3),
+    "review":      ("◑", "inreview", 1),
+    "open":        ("○", "todo", 2),
+    "draft":       ("◌", "backlog", 3),
+    "done":        ("●", "done", 4),
     "cancelled":   ("✕", "muted", 6),
     "canceled":    ("✕", "muted", 6),
     "In Progress": ("◐", "inprogress", 0),
@@ -127,7 +128,7 @@ STATUS_META = {
     "Cancelled":   ("✕", "muted", 5),
 }
 DEFAULT_STATUS_META = ("·", "muted", 9)
-FILTER_ORDER = ["active", "open", "draft", "done", "cancelled",
+FILTER_ORDER = ["active", "review", "open", "draft", "done", "cancelled",
                 "In Progress", "In Review", "Todo", "Backlog"]
 CANCELLED_STATUSES = {"cancelled", "canceled", "Cancelled", "Canceled"}
 
@@ -199,16 +200,16 @@ TICKET ACTIONS
 HIDE RULES
   cancelled  hidden everywhere except `cancelled` chip
   done       hidden everywhere except `done` chip
-  All chip shows draft / open / active only.
+  All chip shows every in-flight state (active / review / open; legacy draft).
 
 STATUS LIFECYCLE
-  draft → /scope plants it; reconciler preserves until a lane spawns
-  open → default
+  open → birth state; /scope plants it (draft is retired)
   active → derived from live worktree / branch, OR sticky `i` mark in tix
+  review → derived from an open, unmerged PR for the slug's branch
   done → derived from merged PR OR sticky `d` mark in tix
   cancelled → sticky `x` mark; trumps every derived signal
 
-The reconciler runs on every tix launch + every `wt` spawn.
+The reconciler runs on every tix launch (background) + every `wt` spawn.
 """
 
 

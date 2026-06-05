@@ -9,8 +9,30 @@
 Code-repo lookup root defaults to ~/Documents/code; override with $TIX_CODE_DIR.
 """
 import os
+import subprocess
 import sys
 from pathlib import Path
+
+
+def kick_reconciler():
+    """Fire `ticket-status-sync.py` in the background so freshly-/scope'd
+    tickets and newly opened/merged PRs converge to their derived status on
+    launch — without blocking the UI on the reconciler's `find $HOME` + `gh`
+    passes. tix/mini auto-reload on the resulting frontmatter writes, so the
+    list refreshes a beat after launch. Best-effort: a missing script or spawn
+    failure must never block or crash launch. TICKETS_DIR is already exported
+    by the time this runs, so the child reconciles the active project's tree."""
+    script = Path.home() / ".claude" / "scripts" / "ticket-status-sync.py"
+    if not script.is_file():
+        return
+    try:
+        subprocess.Popen(
+            [sys.executable, str(script)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        pass
 
 
 def _set_ticket_dirs(primary, *extras):
@@ -107,6 +129,8 @@ def main(argv=None):
             return 1
     else:
         configure_current_project_dirs()
+
+    kick_reconciler()
 
     if "--mini" in argv:
         argv = [a for a in argv if a != "--mini"]

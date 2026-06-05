@@ -29,18 +29,20 @@ from .tui import (
 # Statuses hidden from mini's flat list — done + every cancelled alias.
 _HIDDEN = {s.lower() for s in CANCELLED_STATUSES} | {"done"}
 
-# Mini-local status ordering: active → draft → open. Diverges from tui's
-# STATUS_META rank (which puts open ahead of draft) — drafts are unstarted
-# work the user owns, open are unclaimed; mini surfaces ownership first.
+# Mini-local status ordering: active → review → draft → open. Diverges from
+# tui's STATUS_META rank (which puts open ahead of draft) — drafts are unstarted
+# work the user owns, open are unclaimed; mini surfaces ownership first. `review`
+# (open PR) sits just behind active as the most in-flight work.
 # Title-case aliases map to their lowercase equivalents.
 _MINI_RANK = {
     "active": 0,
-    "draft": 1,
-    "open": 2,
+    "review": 1,
+    "draft": 2,
+    "open": 3,
     "In Progress": 0,
-    "Backlog": 1,
-    "Todo": 2,
-    "In Review": 2,
+    "In Review": 1,
+    "Backlog": 2,
+    "Todo": 3,
 }
 
 
