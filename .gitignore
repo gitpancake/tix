@@ -13,3 +13,17 @@ htmlcov/
 .DS_Store
 .env
 .claude/
+
+# wt-lanes / Claude Code runtime state (gitpancake/wt-lanes)
+.claude/worktrees/
+.claude/agent-state
+.claude/agent-pid
+.claude/sessions/
+.claude/ctx-cache
+.claude/tmux-window
+.claude/parent-cwd
+.claude/precheck.log
+.claude/precheck.pid
+.claude/*.tmp.*
+.claude/settings.local.json
+.env.local.port
