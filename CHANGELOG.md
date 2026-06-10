@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.16] — 2026-06-10
+
+### Changed
+- `Enter` now reflows hard-wrapped briefs (soft line breaks joined inside
+  paragraphs and bullets; fences, frontmatter, headings, quotes, and tables
+  untouched) and pipes them to `glow` word-wrapped at the live terminal
+  width. A narrower `width:` in glow.yml previously re-wrapped briefs into
+  ragged orphan-word lines.
+- The preview pane renders styled markdown instead of raw truncated lines:
+  body text reflows and wraps to the pane width, headings draw bold accent
+  without `##`, bullets render as `•` with hanging indent, and fenced code
+  plus inline backtick spans get a code color that carries across wrapped
+  lines.
+
 ## [0.3.15] — 2026-06-10
 
 ### Fixed
