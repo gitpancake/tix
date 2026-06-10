@@ -52,8 +52,16 @@ def build_rows(tickets):
     Hides done/cancelled (case-insensitive — pre-migration title-case
     `Done`/`Canceled` also drop). Sort: mini rank asc (active → draft →
     open), then `created` desc; ties broken by id. Missing `created` (0.0)
-    sinks via -created negation."""
+    sinks via -created negation.
+
+    Also stamps `is_epic_child` on each kept ticket — true when the ticket
+    lives inside an epic folder (a sibling `_epic.md` was loaded). Epic dirs
+    come from the *unfiltered* ticket list so children stay marked even when
+    their epic is done/cancelled and hidden."""
+    epic_dirs = {t.path.parent for t in tickets if t.is_epic}
     keep = [t for t in tickets if t.status.lower() not in _HIDDEN]
+    for t in keep:
+        t.is_epic_child = not t.is_epic and t.path.parent in epic_dirs
     return sorted(
         keep,
         key=lambda t: (
@@ -65,6 +73,9 @@ def build_rows(tickets):
 
 
 def _status_meta(ticket):
+    # Epics defer to Ticket.meta (▸ / accent) — same marker the full tui uses.
+    if ticket.is_epic:
+        return ticket.meta
     return STATUS_META.get(ticket.status, DEFAULT_STATUS_META)
 
 
@@ -106,6 +117,7 @@ def _init_colors():
         "backlog": curses.COLOR_BLUE,
         "done": curses.COLOR_GREEN,
         "muted": curses.COLOR_WHITE,
+        "accent": curses.COLOR_CYAN,
     }
     for i, (name, fg) in enumerate(spec.items(), start=1):
         try:
@@ -146,11 +158,16 @@ def _draw(stdscr, rows, sel, top, colors):
             label_x = age_x
         title_w = max(0, label_x - title_x - 1)
         sel_attr = curses.A_REVERSE if idx == sel else 0
+        # Hierarchy markers: epics keep their ▸ icon and render the title bold;
+        # children get a `↳ ` title prefix (flat list, so indentation alone
+        # wouldn't read — children aren't adjacent to their epic).
+        title = f"↳ {t.title}" if getattr(t, "is_epic_child", False) else t.title
+        title_attr = sel_attr | color_attr | (curses.A_BOLD if t.is_epic else 0)
         try:
             if idx == sel:
                 stdscr.addstr(i, 0, " " * (w - 1), sel_attr)
             stdscr.addstr(i, 0, icon, sel_attr | color_attr | curses.A_BOLD)
-            stdscr.addstr(i, title_x, t.title[:title_w], sel_attr | color_attr)
+            stdscr.addstr(i, title_x, title[:title_w], title_attr)
             if label_tag:
                 stdscr.addstr(
                     i, label_x, label_tag,

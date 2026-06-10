@@ -118,6 +118,50 @@ def test_build_rows_orders_active_draft_open(monkeypatch, tmp_path):
     ]
 
 
+def test_build_rows_marks_epic_children(monkeypatch, tmp_path):
+    """Tickets inside an epic folder get `is_epic_child`; the epic itself and
+    standalone briefs don't. Marking survives the epic being hidden (done) —
+    epic dirs are collected from the unfiltered ticket list."""
+    tree = tmp_path / "tickets"
+    epic_dir = tree / "area" / "big-epic"
+    epic_dir.mkdir(parents=True)
+    (epic_dir / "_epic.md").write_text(
+        "---\nstatus: open\ncreated: 2026-05-01T00:00:00Z\n---\n# big epic\n",
+        encoding="utf-8",
+    )
+    (epic_dir / "01-child.md").write_text(
+        "---\nstatus: open\ncreated: 2026-05-01T00:00:00Z\n---\n# child\n",
+        encoding="utf-8",
+    )
+    (tree / "area" / "solo.md").write_text(
+        "---\nstatus: open\ncreated: 2026-05-01T00:00:00Z\n---\n# solo\n",
+        encoding="utf-8",
+    )
+    done_epic_dir = tree / "area" / "done-epic"
+    done_epic_dir.mkdir(parents=True)
+    (done_epic_dir / "_epic.md").write_text(
+        "---\nstatus: done\ncreated: 2026-05-01T00:00:00Z\n---\n# done epic\n",
+        encoding="utf-8",
+    )
+    (done_epic_dir / "01-straggler.md").write_text(
+        "---\nstatus: open\ncreated: 2026-05-01T00:00:00Z\n---\n# straggler\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TICKETS_DIR", str(tree))
+    for mod in ("tix.mini", "tix.tui", "tix"):
+        sys.modules.pop(mod, None)
+
+    from tix import mini, tui
+    rows = mini.build_rows(tui.load_tickets())
+    flags = {t.slug: t.is_epic_child for t in rows}
+    assert flags == {
+        "big-epic": False,
+        "01-child": True,
+        "solo": False,
+        "01-straggler": True,
+    }
+
+
 def test_build_rows_filters_case_insensitive(monkeypatch, tmp_path):
     """Pre-migration title-case statuses (Done, Canceled) must also hide."""
     tree = tmp_path / "tickets"
