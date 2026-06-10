@@ -1,14 +1,18 @@
-"""tix --mini — narrow-pane reverse-chrono ticket reader.
+"""tix --mini — narrow-pane ticket reader.
 
-A stripped-down sibling of `tui.py`: flat list, newest `created:` first,
-done/cancelled hidden. ↑/↓ to move, Enter opens the brief in glow/$PAGER,
-`p` spawns a `wt` lane. Targets ≥20 column panes (think tmux sidecar).
+A stripped-down sibling of `tui.py`: newest `created:` first, in-flight
+(active/review) work above a divider, everything else below. Epic children
+group indented under their epic row — done children stay visible until the
+whole epic is finished, then the group drops. ↑/↓ to move, Enter opens the
+brief in glow/$PAGER, `p` spawns a `wt` lane. Targets ≥20 column panes
+(think tmux sidecar).
 
 Reuses tui's `Ticket` parser, `parse_created`, and the module-level
 `open_in_pager` / `pickup_ticket` helpers — mini is a thinner renderer
 over the identical model layer."""
 import curses
 import sys
+from datetime import datetime
 
 from .tui import (
     CANCELLED_STATUSES,
@@ -20,56 +24,90 @@ from .tui import (
     open_in_pager,
     pickup_agent_label,
     pickup_ticket,
-    relative_age,
     run_preload_hook,
     write_label,
     write_status,
 )
 
-# Statuses hidden from mini's flat list — done + every cancelled alias.
-_HIDDEN = {s.lower() for s in CANCELLED_STATUSES} | {"done"}
+# Finished statuses — hidden as standalone rows; inside a still-running epic,
+# done children stay visible (cancelled never do).
+_DONEISH = {s.lower() for s in CANCELLED_STATUSES} | {"done"}
+_CANCELLED = {s.lower() for s in CANCELLED_STATUSES}
 
-# Mini-local status ordering: active → review → draft → open. Diverges from
-# tui's STATUS_META rank (which puts open ahead of draft) — drafts are unstarted
-# work the user owns, open are unclaimed; mini surfaces ownership first. `review`
-# (open PR) sits just behind active as the most in-flight work.
-# Title-case aliases map to their lowercase equivalents.
-_MINI_RANK = {
-    "active": 0,
-    "review": 1,
-    "draft": 2,
-    "open": 3,
-    "In Progress": 0,
-    "In Review": 1,
-    "Backlog": 2,
-    "Todo": 3,
-}
+# In-flight statuses sort above the divider. Lowercase compare — covers the
+# pre-migration title-case aliases (`In Progress`, `In Review`).
+_IN_FLIGHT = {"active", "review", "in progress", "in review"}
+
+# Sentinel row separating the in-flight section from the rest. Not selectable
+# — navigation steps over it, rendering draws a rule.
+DIVIDER = object()
+
+
+def _is_doneish(ticket):
+    return ticket.status.lower() in _DONEISH
+
+
+def _is_in_flight(ticket):
+    return ticket.status.lower() in _IN_FLIGHT
 
 
 def build_rows(tickets):
-    """Filter + sort tickets for mini's flat list.
+    """Filter + sort tickets for mini's list.
 
-    Hides done/cancelled (case-insensitive — pre-migration title-case
-    `Done`/`Canceled` also drop). Sort: mini rank asc (active → draft →
-    open), then `created` desc; ties broken by id. Missing `created` (0.0)
-    sinks via -created negation.
+    Two sections, newest `created:` first within each (missing `created`
+    (0.0) sinks via -created negation; ties broken by id): in-flight
+    (active/review) above DIVIDER, the rest below. The divider only appears
+    when both sections are non-empty.
 
-    Also stamps `is_epic_child` on each kept ticket — true when the ticket
-    lives inside an epic folder (a sibling `_epic.md` was loaded). Epic dirs
-    come from the *unfiltered* ticket list so children stay marked even when
-    their epic is done/cancelled and hidden."""
-    epic_dirs = {t.path.parent for t in tickets if t.is_epic}
-    keep = [t for t in tickets if t.status.lower() not in _HIDDEN]
-    for t in keep:
-        t.is_epic_child = not t.is_epic and t.path.parent in epic_dirs
-    return sorted(
-        keep,
-        key=lambda t: (
-            _MINI_RANK.get(t.status, 9),
-            -t.created,
-            t.id,
-        ),
-    )
+    Standalone done/cancelled tickets are hidden. A visible epic groups: the
+    epic row leads, children follow indented (`is_epic_child`), created desc.
+    Done children stay listed while any sibling is unfinished — the group
+    shows epic progression — and the whole group (epic included) drops once
+    every child is done/cancelled. Cancelled children never render. A group
+    sorts by its newest displayed member and lands in the in-flight section
+    when any displayed member is in-flight."""
+    epics = {t.path.parent: t for t in tickets if t.is_epic}
+    units = []
+    for t in tickets:
+        if t.is_epic or t.path.parent in epics or _is_doneish(t):
+            continue
+        t.is_epic_child = False
+        units.append((-t.created, t.id, [t]))
+    for epic_dir, epic in epics.items():
+        children = [t for t in tickets if not t.is_epic and t.path.parent == epic_dir]
+        epic_finished = (all(_is_doneish(c) for c in children) if children
+                         else _is_doneish(epic))
+        if epic_finished:
+            continue
+        shown = sorted(
+            (c for c in children if c.status.lower() not in _CANCELLED),
+            key=lambda t: (-t.created, t.id),
+        )
+        epic.is_epic_child = False
+        for child in shown:
+            child.is_epic_child = True
+        members = [epic] + shown
+        newest = max(m.created for m in members)
+        units.append((-newest, epic.id, members))
+    units.sort(key=lambda unit: unit[:2])
+    in_flight = [t for _, _, members in units
+                 if any(_is_in_flight(m) for m in members) for t in members]
+    backlog = [t for _, _, members in units
+               if not any(_is_in_flight(m) for m in members) for t in members]
+    if in_flight and backlog:
+        return in_flight + [DIVIDER] + backlog
+    return in_flight + backlog
+
+
+def _created_stamp(ticket):
+    """`created:` as `MM/DD HH:MM` for the right-aligned column. Empty when
+    created is missing (0.0) or out of fromtimestamp's range."""
+    if not ticket.created:
+        return ""
+    try:
+        return datetime.fromtimestamp(ticket.created).strftime("%m/%d %H:%M")
+    except (OSError, ValueError, OverflowError):
+        return ""
 
 
 def _status_meta(ticket):
@@ -98,6 +136,35 @@ def _set_label(ticket, label):
     label = label.strip()
     write_label(ticket.path, label)
     ticket.label = label
+
+
+def _step(rows, sel, delta):
+    """One selection step, skipping DIVIDER. Stays put at list edges."""
+    i = sel + delta
+    while 0 <= i < len(rows) and rows[i] is DIVIDER:
+        i += delta
+    return i if 0 <= i < len(rows) else sel
+
+
+def _nearest_ticket(rows, i):
+    """Clamp i into range, then nudge off DIVIDER (up first, then down)."""
+    if not rows:
+        return 0
+    i = max(0, min(i, len(rows) - 1))
+    if rows[i] is not DIVIDER:
+        return i
+    for j in (*range(i - 1, -1, -1), *range(i + 1, len(rows))):
+        if rows[j] is not DIVIDER:
+            return j
+    return 0
+
+
+def _find_path(rows, path, fallback):
+    """Index of the row holding `path`; else fallback nudged off DIVIDER."""
+    for i, t in enumerate(rows):
+        if t is not DIVIDER and t.path == path:
+            return i
+    return _nearest_ticket(rows, fallback)
 
 
 def _init_colors():
@@ -144,37 +211,42 @@ def _draw(stdscr, rows, sel, top, colors):
         if idx >= len(rows):
             break
         t = rows[idx]
+        if t is DIVIDER:
+            try:
+                stdscr.addstr(i, 0, "─" * (w - 1),
+                              colors.get("muted", 0) | curses.A_DIM)
+            except curses.error:
+                pass
+            continue
         icon, color_name, _ = _status_meta(t)
         color_attr = colors.get(color_name, 0)
-        age = relative_age(t.created) or ""
-        age_pad = f"{age:>4}"
+        stamp_pad = f"{_created_stamp(t):>11}"
         label_tag = f"#{t.label[:14]}" if t.label else ""
-        # Layout: icon + title, then optional label + right-aligned age.
-        age_x = max(0, w - len(age_pad) - 1)
-        title_x = 2
-        label_x = age_x - len(label_tag) - 1 if label_tag else age_x
+        # Layout: [indent] icon + title, then optional label + right-aligned
+        # created stamp. Children sit 2 cols deep under their epic row
+        # (grouping is build_rows' job — adjacency makes the indent readable).
+        indent = 2 if getattr(t, "is_epic_child", False) else 0
+        stamp_x = max(0, w - len(stamp_pad) - 1)
+        title_x = indent + 2
+        label_x = stamp_x - len(label_tag) - 1 if label_tag else stamp_x
         if label_tag and label_x <= title_x:
             label_tag = ""
-            label_x = age_x
+            label_x = stamp_x
         title_w = max(0, label_x - title_x - 1)
         sel_attr = curses.A_REVERSE if idx == sel else 0
-        # Hierarchy markers: epics keep their ▸ icon and render the title bold;
-        # children get a `↳ ` title prefix (flat list, so indentation alone
-        # wouldn't read — children aren't adjacent to their epic).
-        title = f"↳ {t.title}" if getattr(t, "is_epic_child", False) else t.title
         title_attr = sel_attr | color_attr | (curses.A_BOLD if t.is_epic else 0)
         try:
             if idx == sel:
                 stdscr.addstr(i, 0, " " * (w - 1), sel_attr)
-            stdscr.addstr(i, 0, icon, sel_attr | color_attr | curses.A_BOLD)
-            stdscr.addstr(i, title_x, title[:title_w], title_attr)
+            stdscr.addstr(i, indent, icon, sel_attr | color_attr | curses.A_BOLD)
+            stdscr.addstr(i, title_x, t.title[:title_w], title_attr)
             if label_tag:
                 stdscr.addstr(
                     i, label_x, label_tag,
                     sel_attr | colors.get("muted", 0) | curses.A_DIM,
                 )
             stdscr.addstr(
-                i, age_x, age_pad,
+                i, stamp_x, stamp_pad,
                 sel_attr | colors.get("muted", 0) | curses.A_DIM,
             )
         except curses.error:
@@ -182,7 +254,8 @@ def _draw(stdscr, rows, sel, top, colors):
     # Footer hint. Surfaces the agent `p` will spawn for the selected ticket
     # (per TIX_PICKUP_AGENTS) so routing is visible in the narrow reader too.
     if h >= 1:
-        agent = pickup_agent_label(rows[sel].path) if rows else "pi"
+        has_sel = rows and rows[sel] is not DIVIDER
+        agent = pickup_agent_label(rows[sel].path) if has_sel else "pi"
         hint = f"↑↓ ⏎ · p pickup→{agent} · l label · i/d/x status · q quit"
         try:
             stdscr.addstr(h - 1, 0, hint[: max(0, w - 1)], curses.A_DIM)
@@ -214,7 +287,7 @@ def _run(stdscr):
     # bumps the next poll and triggers a reload.
     dir_sig = dir_signature()
     rows = build_rows(load_tickets())
-    sel = 0
+    sel = _nearest_ticket(rows, 0)
     top = 0
     label_ticket = None
     label_buffer = ""
@@ -244,20 +317,15 @@ def _run(stdscr):
                 continue
             new_sig = dir_signature()
             if new_sig != dir_sig:
-                prev_path = rows[sel].path if rows else None
+                prev_path = rows[sel].path if rows and rows[sel] is not DIVIDER else None
                 # Capture sig BEFORE load_tickets — writes during load bump
                 # next poll instead of being missed.
                 dir_sig = dir_signature()
                 rows = build_rows(load_tickets())
                 if prev_path is not None:
-                    for i, t in enumerate(rows):
-                        if t.path == prev_path:
-                            sel = i
-                            break
-                    else:
-                        sel = min(sel, max(0, len(rows) - 1))
+                    sel = _find_path(rows, prev_path, sel)
                 else:
-                    sel = 0
+                    sel = _nearest_ticket(rows, 0)
             continue
         if label_ticket is not None:
             if ch in (27, 3):  # esc / Ctrl-C — cancel
@@ -270,12 +338,7 @@ def _run(stdscr):
                 label_buffer = ""
                 dir_sig = dir_signature()
                 rows = build_rows(load_tickets())
-                for i, t in enumerate(rows):
-                    if t.path == ticket.path:
-                        sel = i
-                        break
-                else:
-                    sel = min(sel, max(0, len(rows) - 1))
+                sel = _find_path(rows, ticket.path, sel)
             elif ch in (curses.KEY_BACKSPACE, 127, 8):
                 label_buffer = label_buffer[:-1]
             elif 32 <= ch < 127:
@@ -286,17 +349,17 @@ def _run(stdscr):
         if not rows:
             continue
         if ch in (curses.KEY_DOWN,):
-            sel = min(len(rows) - 1, sel + 1)
+            sel = _step(rows, sel, 1)
         elif ch in (curses.KEY_UP,):
-            sel = max(0, sel - 1)
+            sel = _step(rows, sel, -1)
         elif ch == curses.KEY_NPAGE:
-            sel = min(len(rows) - 1, sel + body_h)
+            sel = _nearest_ticket(rows, sel + body_h)
         elif ch == curses.KEY_PPAGE:
-            sel = max(0, sel - body_h)
+            sel = _nearest_ticket(rows, sel - body_h)
         elif ch == curses.KEY_HOME:
-            sel = 0
+            sel = _nearest_ticket(rows, 0)
         elif ch == curses.KEY_END:
-            sel = len(rows) - 1
+            sel = _nearest_ticket(rows, len(rows) - 1)
         elif ch in (curses.KEY_ENTER, 10, 13):
             open_in_pager(stdscr, rows[sel].path)
         elif ch == ord("p"):
@@ -305,12 +368,7 @@ def _run(stdscr):
             dir_sig = dir_signature()
             rows = build_rows(load_tickets())
             # Re-find the same path to keep cursor steady; else clamp.
-            for i, t in enumerate(rows):
-                if t.path == ticket.path:
-                    sel = i
-                    break
-            else:
-                sel = min(sel, max(0, len(rows) - 1))
+            sel = _find_path(rows, ticket.path, sel)
         elif ch == ord("l"):
             label_ticket = rows[sel]
             label_buffer = label_ticket.label
@@ -319,13 +377,8 @@ def _run(stdscr):
             _toggle_status(ticket, ch)
             dir_sig = dir_signature()
             rows = build_rows(load_tickets())
-            for i, t in enumerate(rows):
-                if t.path == ticket.path:
-                    sel = i
-                    break
-            else:
-                # Ticket dropped from view (now done/cancelled).
-                sel = min(sel, max(0, len(rows) - 1))
+            # Ticket may have dropped from view (now done/cancelled).
+            sel = _find_path(rows, ticket.path, sel)
 
 
 def main():
