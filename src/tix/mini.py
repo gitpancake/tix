@@ -49,8 +49,12 @@ class Header:
         self.count = count
 
 
-def _is_header(row):
-    return isinstance(row, Header)
+# Blank row between sections — breathing room under the in-flight block.
+SPACER = object()
+
+
+def _is_filler(row):
+    return row is SPACER or isinstance(row, Header)
 
 
 def _is_doneish(ticket):
@@ -68,7 +72,7 @@ def build_rows(tickets):
     (0.0) sinks via -created negation; ties broken by id): in-flight
     (active/review) under an `IN FLIGHT` Header row, the rest under
     `BACKLOG`. A section's header only appears when the section is
-    non-empty.
+    non-empty; a blank SPACER row separates the two when both render.
 
     Standalone done/cancelled tickets are hidden. A visible epic groups: the
     epic row leads, children follow indented (`is_epic_child`), created desc.
@@ -110,6 +114,8 @@ def build_rows(tickets):
         rows.append(Header("IN FLIGHT", "inprogress", len(in_flight)))
         rows.extend(in_flight)
     if backlog:
+        if rows:
+            rows.append(SPACER)
         rows.append(Header("BACKLOG", "backlog", len(backlog)))
         rows.extend(backlog)
     return rows
@@ -157,7 +163,7 @@ def _set_label(ticket, label):
 def _step(rows, sel, delta):
     """One selection step, skipping Header rows. Stays put at list edges."""
     i = sel + delta
-    while 0 <= i < len(rows) and _is_header(rows[i]):
+    while 0 <= i < len(rows) and _is_filler(rows[i]):
         i += delta
     return i if 0 <= i < len(rows) else sel
 
@@ -167,10 +173,10 @@ def _nearest_ticket(rows, i):
     if not rows:
         return 0
     i = max(0, min(i, len(rows) - 1))
-    if not _is_header(rows[i]):
+    if not _is_filler(rows[i]):
         return i
     for j in (*range(i - 1, -1, -1), *range(i + 1, len(rows))):
-        if not _is_header(rows[j]):
+        if not _is_filler(rows[j]):
             return j
     return 0
 
@@ -178,7 +184,7 @@ def _nearest_ticket(rows, i):
 def _find_path(rows, path, fallback):
     """Index of the row holding `path`; else fallback nudged off headers."""
     for i, t in enumerate(rows):
-        if not _is_header(t) and t.path == path:
+        if not _is_filler(t) and t.path == path:
             return i
     return _nearest_ticket(rows, fallback)
 
@@ -227,7 +233,9 @@ def _draw(stdscr, rows, sel, top, colors):
         if idx >= len(rows):
             break
         t = rows[idx]
-        if _is_header(t):
+        if t is SPACER:
+            continue
+        if _is_filler(t):
             name = t.name[: max(0, w - 1)]
             count = f"({t.count})"
             try:
@@ -275,7 +283,7 @@ def _draw(stdscr, rows, sel, top, colors):
     # Footer hint. Surfaces the agent `p` will spawn for the selected ticket
     # (per TIX_PICKUP_AGENTS) so routing is visible in the narrow reader too.
     if h >= 1:
-        has_sel = rows and not _is_header(rows[sel])
+        has_sel = rows and not _is_filler(rows[sel])
         agent = pickup_agent_label(rows[sel].path) if has_sel else "pi"
         hint = f"↑↓ ⏎ · p pickup→{agent} · l label · i/d/x status · q quit"
         try:
@@ -338,7 +346,7 @@ def _run(stdscr):
                 continue
             new_sig = dir_signature()
             if new_sig != dir_sig:
-                prev_path = rows[sel].path if rows and not _is_header(rows[sel]) else None
+                prev_path = rows[sel].path if rows and not _is_filler(rows[sel]) else None
                 # Capture sig BEFORE load_tickets — writes during load bump
                 # next poll instead of being missed.
                 dir_sig = dir_signature()

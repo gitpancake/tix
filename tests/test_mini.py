@@ -32,7 +32,10 @@ def _load(monkeypatch, tree):
 
 
 def _slugs(mini, rows):
-    return [r.name if isinstance(r, mini.Header) else r.slug for r in rows]
+    return ["" if r is mini.SPACER
+            else r.name if isinstance(r, mini.Header)
+            else r.slug
+            for r in rows]
 
 
 def test_build_rows_sorts_newest_first(monkeypatch, tmp_path):
@@ -64,6 +67,7 @@ def test_build_rows_headers_between_in_flight_and_rest(monkeypatch, tmp_path):
     mini, rows = _load(monkeypatch, tree)
     assert _slugs(mini, rows) == [
         "IN FLIGHT", "review-new", "active-old",
+        "",
         "BACKLOG", "draft-new", "open-new", "open-old",
     ]
     counts = [r.count for r in rows if isinstance(r, mini.Header)]
@@ -82,7 +86,7 @@ def test_build_rows_hides_done_and_cancelled(monkeypatch, tmp_path):
     for status in ("open", "draft", "active", "done", "cancelled"):
         _write(tree, f"area/{status}.md", status, "2026-05-01T00:00:00Z")
     mini, rows = _load(monkeypatch, tree)
-    slugs = set(_slugs(mini, rows)) - {"IN FLIGHT", "BACKLOG"}
+    slugs = set(_slugs(mini, rows)) - {"IN FLIGHT", "BACKLOG", ""}
     assert slugs == {"open", "draft", "active"}
 
 
@@ -144,6 +148,7 @@ def test_build_rows_epic_group_section_and_anchor(monkeypatch, tmp_path):
     mini, rows = _load(monkeypatch, tree)
     assert _slugs(mini, rows) == [
         "IN FLIGHT", "hot-epic", "01-now", "lone-active",
+        "",
         "BACKLOG", "lone-open",
     ]
 
@@ -177,14 +182,15 @@ def test_step_and_nearest_skip_headers():
     a, b = _Row(), _Row()
     flight = mini.Header("IN FLIGHT", "inprogress", 1)
     backlog = mini.Header("BACKLOG", "backlog", 1)
-    rows = [flight, a, backlog, b]
-    assert mini._step(rows, 1, 1) == 3
-    assert mini._step(rows, 3, -1) == 1
-    assert mini._step(rows, 3, 1) == 3
+    rows = [flight, a, mini.SPACER, backlog, b]
+    assert mini._step(rows, 1, 1) == 4
+    assert mini._step(rows, 4, -1) == 1
+    assert mini._step(rows, 4, 1) == 4
     assert mini._step(rows, 1, -1) == 1
     assert mini._nearest_ticket(rows, 0) == 1
     assert mini._nearest_ticket(rows, 2) == 1
-    assert mini._nearest_ticket(rows, 99) == 3
+    assert mini._nearest_ticket(rows, 3) == 1
+    assert mini._nearest_ticket(rows, 99) == 4
 
 
 def test_main_routes_mini_flag(monkeypatch, tmp_path):
