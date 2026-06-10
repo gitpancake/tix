@@ -25,6 +25,9 @@ classifiers = [
 ]
 dependencies = []
 
+[dependency-groups]
+dev = ["pytest"]
+
 [project.scripts]
 tix = "tix.__main__:main"
 
