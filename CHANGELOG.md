@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.11] — 2026-06-09
+
+### Added
+- `review` lifecycle status (open, unmerged PR) between `active` and `done`,
+  rendered ◑ magenta. Wired through `STATUS_META`, `FILTER_ORDER`, and mini's
+  rank so it sorts just behind `active` as the most in-flight work.
+- Mini reader now marks ticket hierarchy: epics render with the main TUI's
+  `▸` accent marker and a bold title; tickets inside an epic folder get a
+  `↳ ` title prefix. Detection is structural (sibling `_epic.md`) and
+  survives the epic itself being done/hidden.
+
+### Fixed
+- The launch-time status reconcile (`ticket-status-sync.py`) now actually
+  runs in the background on every `tix`/`tix --mini` start — the docstring
+  long claimed this happened, but nothing invoked it.
+
 ## [0.3.10] — 2026-06-04
 
 ### Added
