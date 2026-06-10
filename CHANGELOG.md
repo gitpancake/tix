@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.13] — 2026-06-09
+
+### Changed
+- Mini's in-flight/backlog split now renders git-watch-style section
+  headers — `IN FLIGHT (n)` / `BACKLOG (n)`, bold section color with a dim
+  ticket count — instead of a bare rule divider. A header appears whenever
+  its section is non-empty (the old divider needed both), and a blank
+  spacer row separates the sections when both render. Headers and the
+  spacer are non-selectable; navigation skips them.
+
 ## [0.3.12] — 2026-06-09
 
 ### Changed
