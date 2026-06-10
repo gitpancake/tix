@@ -102,8 +102,9 @@ def test_build_rows_filters_case_insensitive(monkeypatch, tmp_path):
 
 def test_build_rows_groups_children_under_epic(monkeypatch, tmp_path):
     """A running epic groups: epic row leads, children follow indented
-    (`is_epic_child`), created desc. Done children stay visible while a
-    sibling is unfinished; cancelled children never render."""
+    (`is_epic_child`) in `NN-` prefix order — even when created stamps run
+    the other way. Done children stay visible while a sibling is unfinished;
+    cancelled children never render."""
     tree = tmp_path / "tickets"
     _write(tree, "area/big-epic/_epic.md", "open", "2026-05-01T00:00:00Z")
     _write(tree, "area/big-epic/01-shipped.md", "done", "2026-05-01T00:00:00Z")
@@ -112,15 +113,35 @@ def test_build_rows_groups_children_under_epic(monkeypatch, tmp_path):
     _write(tree, "area/solo.md", "open", "2026-04-01T00:00:00Z")
     mini, rows = _load(monkeypatch, tree)
     assert _slugs(mini, rows) == [
-        "BACKLOG", "big-epic", "02-next", "01-shipped", "solo",
+        "BACKLOG", "big-epic", "01-shipped", "02-next", "solo",
     ]
     flags = {t.slug: t.is_epic_child for t in rows
              if not isinstance(t, mini.Header)}
     assert flags == {
         "big-epic": False,
-        "02-next": True,
         "01-shipped": True,
+        "02-next": True,
         "solo": False,
+    }
+
+
+def test_build_rows_unprefixed_children_after_ordered(monkeypatch, tmp_path):
+    """Children without an `NN-` prefix sort after prefixed siblings, created
+    desc among themselves; `_epic_order` exposes the prefix for rendering."""
+    tree = tmp_path / "tickets"
+    _write(tree, "area/mixed-epic/_epic.md", "open", "2026-05-01T00:00:00Z")
+    _write(tree, "area/mixed-epic/10-late.md", "open", "2026-05-01T00:00:00Z")
+    _write(tree, "area/mixed-epic/02-early.md", "open", "2026-05-09T00:00:00Z")
+    _write(tree, "area/mixed-epic/extra-old.md", "open", "2026-05-02T00:00:00Z")
+    _write(tree, "area/mixed-epic/extra-new.md", "open", "2026-05-08T00:00:00Z")
+    mini, rows = _load(monkeypatch, tree)
+    assert _slugs(mini, rows) == [
+        "BACKLOG", "mixed-epic", "02-early", "10-late", "extra-new", "extra-old",
+    ]
+    orders = {t.slug: mini._epic_order(t) for t in rows
+              if not isinstance(t, mini.Header) and t.is_epic_child}
+    assert orders == {
+        "02-early": "02", "10-late": "10", "extra-old": "", "extra-new": "",
     }
 
 

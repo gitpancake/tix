@@ -12,6 +12,7 @@ Reuses tui's `Ticket` parser, `parse_created`, and the module-level
 `open_in_pager` / `pickup_ticket` helpers — mini is a thinner renderer
 over the identical model layer."""
 import curses
+import re
 import sys
 from datetime import datetime
 
@@ -65,6 +66,14 @@ def _is_in_flight(ticket):
     return ticket.status.lower() in _IN_FLIGHT
 
 
+def _epic_order(ticket):
+    """Epic-child ordering prefix from the filename (`NN-<child>.md` → `NN`).
+    Filename is authoritative for order — frontmatter titles drop the prefix.
+    Empty string when the child is unprefixed."""
+    match = re.match(r"(\d+)-", ticket.path.stem)
+    return match.group(1) if match else ""
+
+
 def build_rows(tickets):
     """Filter + sort tickets for mini's list.
 
@@ -75,12 +84,13 @@ def build_rows(tickets):
     non-empty; a blank SPACER row separates the two when both render.
 
     Standalone done/cancelled tickets are hidden. A visible epic groups: the
-    epic row leads, children follow indented (`is_epic_child`), created desc.
-    Done children stay listed while any sibling is unfinished — the group
-    shows epic progression — and the whole group (epic included) drops once
-    every child is done/cancelled. Cancelled children never render. A group
-    sorts by its newest displayed member and lands in the in-flight section
-    when any displayed member is in-flight."""
+    epic row leads, children follow indented (`is_epic_child`) in epic order —
+    `NN-` filename prefix ascending, unprefixed children after by created
+    desc. Done children stay listed while any sibling is unfinished — the
+    group shows epic progression — and the whole group (epic included) drops
+    once every child is done/cancelled. Cancelled children never render. A
+    group sorts by its newest displayed member and lands in the in-flight
+    section when any displayed member is in-flight."""
     epics = {t.path.parent: t for t in tickets if t.is_epic}
     units = []
     for t in tickets:
@@ -96,7 +106,8 @@ def build_rows(tickets):
             continue
         shown = sorted(
             (c for c in children if c.status.lower() not in _CANCELLED),
-            key=lambda t: (-t.created, t.id),
+            key=lambda t: ((0, int(_epic_order(t)), t.id) if _epic_order(t)
+                           else (1, -t.created, t.id)),
         )
         epic.is_epic_child = False
         for child in shown:
@@ -251,12 +262,16 @@ def _draw(stdscr, rows, sel, top, colors):
         color_attr = colors.get(color_name, 0)
         stamp_pad = f"{_created_stamp(t):>11}"
         label_tag = f"#{t.label[:14]}" if t.label else ""
-        # Layout: [indent] icon + title, then optional label + right-aligned
-        # created stamp. Children sit 2 cols deep under their epic row
-        # (grouping is build_rows' job — adjacency makes the indent readable).
-        indent = 2 if getattr(t, "is_epic_child", False) else 0
+        # Layout: [indent] icon + [NN] + title, then optional label +
+        # right-aligned created stamp. Children sit 2 cols deep under their
+        # epic row (grouping is build_rows' job — adjacency makes the indent
+        # readable) and show their `NN-` filename order prefix dim before the
+        # title so epic position is visible.
+        is_child = getattr(t, "is_epic_child", False)
+        indent = 2 if is_child else 0
+        order = _epic_order(t) if is_child else ""
         stamp_x = max(0, w - len(stamp_pad) - 1)
-        title_x = indent + 2
+        title_x = indent + 2 + (len(order) + 1 if order else 0)
         label_x = stamp_x - len(label_tag) - 1 if label_tag else stamp_x
         if label_tag and label_x <= title_x:
             label_tag = ""
@@ -268,6 +283,9 @@ def _draw(stdscr, rows, sel, top, colors):
             if idx == sel:
                 stdscr.addstr(i, 0, " " * (w - 1), sel_attr)
             stdscr.addstr(i, indent, icon, sel_attr | color_attr | curses.A_BOLD)
+            if order:
+                stdscr.addstr(i, indent + 2, order,
+                              sel_attr | colors.get("muted", 0) | curses.A_DIM)
             stdscr.addstr(i, title_x, t.title[:title_w], title_attr)
             if label_tag:
                 stdscr.addstr(
