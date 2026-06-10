@@ -1,7 +1,8 @@
 """tix --mini — narrow-pane ticket reader.
 
 A stripped-down sibling of `tui.py`: newest `created:` first, in-flight
-(active/review) work above a divider, everything else below. Epic children
+(active/review) work under an `IN FLIGHT (n)` header, everything else under
+`BACKLOG (n)` (git-watch-style section headers). Epic children
 group indented under their epic row — done children stay visible until the
 whole epic is finished, then the group drops. ↑/↓ to move, Enter opens the
 brief in glow/$PAGER, `p` spawns a `wt` lane. Targets ≥20 column panes
@@ -38,9 +39,18 @@ _CANCELLED = {s.lower() for s in CANCELLED_STATUSES}
 # pre-migration title-case aliases (`In Progress`, `In Review`).
 _IN_FLIGHT = {"active", "review", "in progress", "in review"}
 
-# Sentinel row separating the in-flight section from the rest. Not selectable
-# — navigation steps over it, rendering draws a rule.
-DIVIDER = object()
+class Header:
+    """Non-selectable section header row (git-watch style: bold colored name,
+    dim ticket count). Navigation steps over it."""
+
+    def __init__(self, name, color, count):
+        self.name = name
+        self.color = color
+        self.count = count
+
+
+def _is_header(row):
+    return isinstance(row, Header)
 
 
 def _is_doneish(ticket):
@@ -56,8 +66,9 @@ def build_rows(tickets):
 
     Two sections, newest `created:` first within each (missing `created`
     (0.0) sinks via -created negation; ties broken by id): in-flight
-    (active/review) above DIVIDER, the rest below. The divider only appears
-    when both sections are non-empty.
+    (active/review) under an `IN FLIGHT` Header row, the rest under
+    `BACKLOG`. A section's header only appears when the section is
+    non-empty.
 
     Standalone done/cancelled tickets are hidden. A visible epic groups: the
     epic row leads, children follow indented (`is_epic_child`), created desc.
@@ -94,9 +105,14 @@ def build_rows(tickets):
                  if any(_is_in_flight(m) for m in members) for t in members]
     backlog = [t for _, _, members in units
                if not any(_is_in_flight(m) for m in members) for t in members]
-    if in_flight and backlog:
-        return in_flight + [DIVIDER] + backlog
-    return in_flight + backlog
+    rows = []
+    if in_flight:
+        rows.append(Header("IN FLIGHT", "inprogress", len(in_flight)))
+        rows.extend(in_flight)
+    if backlog:
+        rows.append(Header("BACKLOG", "backlog", len(backlog)))
+        rows.extend(backlog)
+    return rows
 
 
 def _created_stamp(ticket):
@@ -139,30 +155,30 @@ def _set_label(ticket, label):
 
 
 def _step(rows, sel, delta):
-    """One selection step, skipping DIVIDER. Stays put at list edges."""
+    """One selection step, skipping Header rows. Stays put at list edges."""
     i = sel + delta
-    while 0 <= i < len(rows) and rows[i] is DIVIDER:
+    while 0 <= i < len(rows) and _is_header(rows[i]):
         i += delta
     return i if 0 <= i < len(rows) else sel
 
 
 def _nearest_ticket(rows, i):
-    """Clamp i into range, then nudge off DIVIDER (up first, then down)."""
+    """Clamp i into range, then nudge off Header rows (up first, then down)."""
     if not rows:
         return 0
     i = max(0, min(i, len(rows) - 1))
-    if rows[i] is not DIVIDER:
+    if not _is_header(rows[i]):
         return i
     for j in (*range(i - 1, -1, -1), *range(i + 1, len(rows))):
-        if rows[j] is not DIVIDER:
+        if not _is_header(rows[j]):
             return j
     return 0
 
 
 def _find_path(rows, path, fallback):
-    """Index of the row holding `path`; else fallback nudged off DIVIDER."""
+    """Index of the row holding `path`; else fallback nudged off headers."""
     for i, t in enumerate(rows):
-        if t is not DIVIDER and t.path == path:
+        if not _is_header(t) and t.path == path:
             return i
     return _nearest_ticket(rows, fallback)
 
@@ -211,10 +227,15 @@ def _draw(stdscr, rows, sel, top, colors):
         if idx >= len(rows):
             break
         t = rows[idx]
-        if t is DIVIDER:
+        if _is_header(t):
+            name = t.name[: max(0, w - 1)]
+            count = f"({t.count})"
             try:
-                stdscr.addstr(i, 0, "─" * (w - 1),
-                              colors.get("muted", 0) | curses.A_DIM)
+                stdscr.addstr(i, 0, name,
+                              colors.get(t.color, 0) | curses.A_BOLD)
+                if len(name) + 1 + len(count) < w:
+                    stdscr.addstr(i, len(name) + 1, count,
+                                  colors.get("muted", 0) | curses.A_DIM)
             except curses.error:
                 pass
             continue
@@ -254,7 +275,7 @@ def _draw(stdscr, rows, sel, top, colors):
     # Footer hint. Surfaces the agent `p` will spawn for the selected ticket
     # (per TIX_PICKUP_AGENTS) so routing is visible in the narrow reader too.
     if h >= 1:
-        has_sel = rows and rows[sel] is not DIVIDER
+        has_sel = rows and not _is_header(rows[sel])
         agent = pickup_agent_label(rows[sel].path) if has_sel else "pi"
         hint = f"↑↓ ⏎ · p pickup→{agent} · l label · i/d/x status · q quit"
         try:
@@ -317,7 +338,7 @@ def _run(stdscr):
                 continue
             new_sig = dir_signature()
             if new_sig != dir_sig:
-                prev_path = rows[sel].path if rows and rows[sel] is not DIVIDER else None
+                prev_path = rows[sel].path if rows and not _is_header(rows[sel]) else None
                 # Capture sig BEFORE load_tickets — writes during load bump
                 # next poll instead of being missed.
                 dir_sig = dir_signature()

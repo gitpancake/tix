@@ -32,7 +32,7 @@ def _load(monkeypatch, tree):
 
 
 def _slugs(mini, rows):
-    return [t.slug if t is not mini.DIVIDER else "—" for t in rows]
+    return [r.name if isinstance(r, mini.Header) else r.slug for r in rows]
 
 
 def test_build_rows_sorts_newest_first(monkeypatch, tmp_path):
@@ -47,12 +47,14 @@ def test_build_rows_sorts_newest_first(monkeypatch, tmp_path):
     slugs = _slugs(mini, rows)
     assert slugs.index("new") < slugs.index("old")
     assert "no-date" in slugs
-    assert "—" not in slugs  # single section → no divider
+    assert slugs[0] == "BACKLOG"  # single section → one header
+    assert "IN FLIGHT" not in slugs
 
 
-def test_build_rows_divider_between_in_flight_and_rest(monkeypatch, tmp_path):
-    """active/review sort above DIVIDER, open/draft below; each section is
-    created desc (ties broken by id, so draft-new precedes open-new)."""
+def test_build_rows_headers_between_in_flight_and_rest(monkeypatch, tmp_path):
+    """active/review sort under IN FLIGHT, open/draft under BACKLOG; each
+    section is created desc (ties broken by id, so draft-new precedes
+    open-new). Header counts match section sizes."""
     tree = tmp_path / "tickets"
     _write(tree, "area/open-new.md", "open", "2026-05-02T00:00:00Z")
     _write(tree, "area/open-old.md", "open", "2026-01-01T00:00:00Z")
@@ -61,17 +63,18 @@ def test_build_rows_divider_between_in_flight_and_rest(monkeypatch, tmp_path):
     _write(tree, "area/review-new.md", "review", "2026-05-02T00:00:00Z")
     mini, rows = _load(monkeypatch, tree)
     assert _slugs(mini, rows) == [
-        "review-new", "active-old",
-        "—",
-        "draft-new", "open-new", "open-old",
+        "IN FLIGHT", "review-new", "active-old",
+        "BACKLOG", "draft-new", "open-new", "open-old",
     ]
+    counts = [r.count for r in rows if isinstance(r, mini.Header)]
+    assert counts == [2, 3]
 
 
-def test_build_rows_no_divider_when_one_section_empty(monkeypatch, tmp_path):
+def test_build_rows_single_section_keeps_header(monkeypatch, tmp_path):
     tree = tmp_path / "tickets"
     _write(tree, "area/only-active.md", "active", "2026-05-01T00:00:00Z")
     mini, rows = _load(monkeypatch, tree)
-    assert _slugs(mini, rows) == ["only-active"]
+    assert _slugs(mini, rows) == ["IN FLIGHT", "only-active"]
 
 
 def test_build_rows_hides_done_and_cancelled(monkeypatch, tmp_path):
@@ -79,7 +82,7 @@ def test_build_rows_hides_done_and_cancelled(monkeypatch, tmp_path):
     for status in ("open", "draft", "active", "done", "cancelled"):
         _write(tree, f"area/{status}.md", status, "2026-05-01T00:00:00Z")
     mini, rows = _load(monkeypatch, tree)
-    slugs = set(_slugs(mini, rows)) - {"—"}
+    slugs = set(_slugs(mini, rows)) - {"IN FLIGHT", "BACKLOG"}
     assert slugs == {"open", "draft", "active"}
 
 
@@ -90,7 +93,7 @@ def test_build_rows_filters_case_insensitive(monkeypatch, tmp_path):
         _write(tree, f"area/{status}.md", status, "2026-05-01T00:00:00Z")
     _write(tree, "area/keep.md", "open", "2026-05-01T00:00:00Z")
     mini, rows = _load(monkeypatch, tree)
-    assert _slugs(mini, rows) == ["keep"]
+    assert _slugs(mini, rows) == ["BACKLOG", "keep"]
 
 
 def test_build_rows_groups_children_under_epic(monkeypatch, tmp_path):
@@ -104,8 +107,11 @@ def test_build_rows_groups_children_under_epic(monkeypatch, tmp_path):
     _write(tree, "area/big-epic/03-dropped.md", "cancelled", "2026-05-03T00:00:00Z")
     _write(tree, "area/solo.md", "open", "2026-04-01T00:00:00Z")
     mini, rows = _load(monkeypatch, tree)
-    assert _slugs(mini, rows) == ["big-epic", "02-next", "01-shipped", "solo"]
-    flags = {t.slug: t.is_epic_child for t in rows if t is not mini.DIVIDER}
+    assert _slugs(mini, rows) == [
+        "BACKLOG", "big-epic", "02-next", "01-shipped", "solo",
+    ]
+    flags = {t.slug: t.is_epic_child for t in rows
+             if not isinstance(t, mini.Header)}
     assert flags == {
         "big-epic": False,
         "02-next": True,
@@ -123,13 +129,13 @@ def test_build_rows_drops_finished_epic_group(monkeypatch, tmp_path):
     _write(tree, "area/done-epic/02-b.md", "cancelled", "2026-05-02T00:00:00Z")
     _write(tree, "area/solo.md", "open", "2026-04-01T00:00:00Z")
     mini, rows = _load(monkeypatch, tree)
-    assert _slugs(mini, rows) == ["solo"]
+    assert _slugs(mini, rows) == ["BACKLOG", "solo"]
 
 
 def test_build_rows_epic_group_section_and_anchor(monkeypatch, tmp_path):
-    """A group with any in-flight member lands above the divider, anchored at
-    its newest displayed member — here the active child outdates the lone
-    standalone active ticket, so the group leads."""
+    """A group with any in-flight member lands in the IN FLIGHT section,
+    anchored at its newest displayed member — here the active child outdates
+    the lone standalone active ticket, so the group leads."""
     tree = tmp_path / "tickets"
     _write(tree, "area/hot-epic/_epic.md", "open", "2026-01-01T00:00:00Z")
     _write(tree, "area/hot-epic/01-now.md", "active", "2026-05-02T00:00:00Z")
@@ -137,9 +143,8 @@ def test_build_rows_epic_group_section_and_anchor(monkeypatch, tmp_path):
     _write(tree, "area/lone-open.md", "open", "2026-05-03T00:00:00Z")
     mini, rows = _load(monkeypatch, tree)
     assert _slugs(mini, rows) == [
-        "hot-epic", "01-now", "lone-active",
-        "—",
-        "lone-open",
+        "IN FLIGHT", "hot-epic", "01-now", "lone-active",
+        "BACKLOG", "lone-open",
     ]
 
 
@@ -162,7 +167,7 @@ def test_mini_set_label_writes_frontmatter(monkeypatch, tmp_path):
     assert "label:" not in brief.read_text(encoding="utf-8")
 
 
-def test_step_and_nearest_skip_divider():
+def test_step_and_nearest_skip_headers():
     sys.modules.pop("tix.mini", None)
     from tix import mini
 
@@ -170,13 +175,16 @@ def test_step_and_nearest_skip_divider():
         path = None
 
     a, b = _Row(), _Row()
-    rows = [a, mini.DIVIDER, b]
-    assert mini._step(rows, 0, 1) == 2
-    assert mini._step(rows, 2, -1) == 0
-    assert mini._step(rows, 2, 1) == 2
-    assert mini._nearest_ticket(rows, 1) == 0
-    assert mini._nearest_ticket(rows, 99) == 2
-    assert mini._nearest_ticket([mini.DIVIDER, a], 0) == 1
+    flight = mini.Header("IN FLIGHT", "inprogress", 1)
+    backlog = mini.Header("BACKLOG", "backlog", 1)
+    rows = [flight, a, backlog, b]
+    assert mini._step(rows, 1, 1) == 3
+    assert mini._step(rows, 3, -1) == 1
+    assert mini._step(rows, 3, 1) == 3
+    assert mini._step(rows, 1, -1) == 1
+    assert mini._nearest_ticket(rows, 0) == 1
+    assert mini._nearest_ticket(rows, 2) == 1
+    assert mini._nearest_ticket(rows, 99) == 3
 
 
 def test_main_routes_mini_flag(monkeypatch, tmp_path):
