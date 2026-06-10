@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.15] — 2026-06-10
+
+### Fixed
+- `status: merged` is now a read-only alias of `done`. Previously tix
+  didn't recognize it: merged tickets rendered the muted fallback icon,
+  never hid like done tickets, had no filter chip, and kept their epic
+  alive in mini. They now share done's icon and hide rules, appear under
+  the `done` chip, and `d` toggles them back to `open`.
+- Title-case legacy statuses (`Done`, `Canceled`, `Cancelled`) now appear
+  under their lowercase filter chips instead of being invisible when the
+  chip was selected.
+
 ## [0.3.14] — 2026-06-10
 
 ### Changed
