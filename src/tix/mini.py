@@ -19,6 +19,7 @@ from datetime import datetime
 from .tui import (
     CANCELLED_STATUSES,
     DEFAULT_STATUS_META,
+    DONE_STATUSES,
     STATUS_META,
     TICKET_DIRS,
     dir_signature,
@@ -32,8 +33,9 @@ from .tui import (
 )
 
 # Finished statuses — hidden as standalone rows; inside a still-running epic,
-# done children stay visible (cancelled never do).
-_DONEISH = {s.lower() for s in CANCELLED_STATUSES} | {"done"}
+# done children stay visible (cancelled never do). DONE_STATUSES folds in
+# `merged`, the reconciler's done alias.
+_DONEISH = {s.lower() for s in CANCELLED_STATUSES} | DONE_STATUSES
 _CANCELLED = {s.lower() for s in CANCELLED_STATUSES}
 
 # In-flight statuses sort above the divider. Lowercase compare — covers the
@@ -158,7 +160,7 @@ def _toggle_status(ticket, ch):
     if ch == ord("i"):
         new = "open" if cur.lower() == "active" else "active"
     elif ch == ord("d"):
-        new = "open" if cur.lower() == "done" else "done"
+        new = "open" if cur.lower() in DONE_STATUSES else "done"
     else:  # ord("x")
         new = "open" if cur in CANCELLED_STATUSES else "cancelled"
     write_status(ticket.path, new)

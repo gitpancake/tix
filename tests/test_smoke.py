@@ -183,9 +183,48 @@ def test_preload_hook_noop_when_unset(monkeypatch):
 
 def test_status_vocab_pinned():
     from tix import tui
-    canonical = {"active", "open", "draft", "done", "cancelled", "canceled"}
+    canonical = {"active", "open", "draft", "done", "cancelled", "canceled", "merged"}
     keys = set(tui.STATUS_META.keys())
     assert canonical <= keys, "status vocab regressed"
+
+
+def test_merged_is_done_alias(monkeypatch, tmp_path):
+    """`merged` behaves as `done` everywhere: done icon, hidden from All,
+    visible under the done chip (which appears even with no `done` ticket),
+    and `d` flips it back to open."""
+    tree = tmp_path / "tickets"
+    (tree / "integrations").mkdir(parents=True)
+    (tree / "integrations" / "shipped.md").write_text(
+        "---\nstatus: merged\ncreated: 2026-01-01T00:00:00Z\n---\n# shipped\n",
+        encoding="utf-8",
+    )
+    (tree / "integrations" / "pending.md").write_text(
+        "---\nstatus: open\ncreated: 2026-01-01T00:00:00Z\n---\n# pending\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TICKETS_DIR", str(tree))
+    for mod in ("tix.tui", "tix"):
+        sys.modules.pop(mod, None)
+
+    from tix import tui
+    assert tui.STATUS_META["merged"] == tui.STATUS_META["done"]
+
+    app = tui.App()
+    assert "done" in app.filters
+
+    def visible_slugs():
+        return [row["ticket"].slug for row in app.rows if row["type"] == "ticket"]
+
+    assert visible_slugs() == ["pending"]
+
+    app.filter_idx = app.filters.index("done")
+    app.rebuild_rows()
+    assert visible_slugs() == ["shipped"]
+
+    shipped = next(t for t in app.tickets if t.slug == "shipped")
+    app.toggle_done(shipped)
+    text = (tree / "integrations" / "shipped.md").read_text(encoding="utf-8")
+    assert "status: open" in text
 
 
 def test_resolve_project_chdirs_into_code_repo(monkeypatch, tmp_path):

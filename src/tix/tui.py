@@ -117,6 +117,7 @@ STATUS_META = {
     "open":        ("○", "todo", 2),
     "draft":       ("◌", "backlog", 3),
     "done":        ("●", "done", 4),
+    "merged":      ("●", "done", 4),
     "cancelled":   ("✕", "muted", 6),
     "canceled":    ("✕", "muted", 6),
     "In Progress": ("◐", "inprogress", 0),
@@ -131,6 +132,20 @@ DEFAULT_STATUS_META = ("·", "muted", 9)
 FILTER_ORDER = ["active", "review", "open", "draft", "done", "cancelled",
                 "In Progress", "In Review", "Todo", "Backlog"]
 CANCELLED_STATUSES = {"cancelled", "canceled", "Cancelled", "Canceled"}
+# Read-only done aliases (lowercase compare) — reconcilers/PR tooling may
+# write `merged`; tix treats it as `done` everywhere but never rewrites it.
+DONE_STATUSES = {"done", "merged"}
+
+
+def filter_chip(status):
+    """Fold status aliases onto their canonical filter chip so done-ish
+    (`merged`, `Done`) and cancelled-ish (`canceled`, `Cancelled`) tickets
+    ride the `done`/`cancelled` chips instead of vanishing."""
+    if status.lower() in DONE_STATUSES:
+        return "done"
+    if status in CANCELLED_STATUSES:
+        return "cancelled"
+    return status
 
 # Split-pane thresholds. Below the combined minimum, preview is hidden and
 # the list reclaims the full width.
@@ -200,6 +215,7 @@ TICKET ACTIONS
 HIDE RULES
   cancelled  hidden everywhere except `cancelled` chip
   done       hidden everywhere except `done` chip
+  merged     read-only alias of done — same icon, same hiding, same chip
   All chip shows every in-flight state (active / review / open; legacy draft).
 
 STATUS LIFECYCLE
@@ -610,7 +626,8 @@ class App:
                 self.group_meta[g] = (True, area)
             else:
                 self.group_meta[g] = (False, "")
-        present = [s for s in FILTER_ORDER if any(t.status == s for t in self.tickets)]
+        present = [s for s in FILTER_ORDER
+                   if any(filter_chip(t.status) == s for t in self.tickets)]
         self.filters = ["All"] + present
         if self.filter_idx >= len(self.filters):
             self.filter_idx = 0
@@ -618,13 +635,14 @@ class App:
 
     def passes(self, t):
         f = self.filters[self.filter_idx]
+        chip = filter_chip(t.status)
         # Cancelled + done tickets are hidden from every view except their
         # explicit filter chip — the working list is for in-flight work.
-        if t.status in CANCELLED_STATUSES and f != "cancelled":
+        if chip == "cancelled" and f != "cancelled":
             return False
-        if t.status.lower() == "done" and f != "done":
+        if chip == "done" and f != "done":
             return False
-        if f != "All" and t.status != f:
+        if f != "All" and chip != f:
             return False
         if self.query:
             q = self.query.lower()
@@ -1210,7 +1228,7 @@ class App:
         """Flip done ↔ open in place. Sticky in the reconciler so a manual
         mark survives even without a merged PR — useful for spikes, ops, or
         research tickets whose 'completion' has no PR signal."""
-        new_status = "open" if ticket.status.lower() == "done" else "done"
+        new_status = "open" if ticket.status.lower() in DONE_STATUSES else "done"
         write_status(ticket.path, new_status)
         ticket.status = new_status
         path = ticket.path

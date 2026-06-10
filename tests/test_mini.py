@@ -83,7 +83,7 @@ def test_build_rows_single_section_keeps_header(monkeypatch, tmp_path):
 
 def test_build_rows_hides_done_and_cancelled(monkeypatch, tmp_path):
     tree = tmp_path / "tickets"
-    for status in ("open", "draft", "active", "done", "cancelled"):
+    for status in ("open", "draft", "active", "done", "merged", "cancelled"):
         _write(tree, f"area/{status}.md", status, "2026-05-01T00:00:00Z")
     mini, rows = _load(monkeypatch, tree)
     slugs = set(_slugs(mini, rows)) - {"IN FLIGHT", "BACKLOG", ""}

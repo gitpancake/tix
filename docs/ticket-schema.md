@@ -82,6 +82,12 @@ on a single line.
 - `cancelled` — dropped. **Terminal** — trumps every derived signal until you
   reopen it. Set/cleared with `x`.
 
+Read-only aliases: `merged` is treated as `done` everywhere (some reconcilers
+and PR tooling write it); the pre-migration title-case variants (`Done`,
+`Canceled`, …) likewise fold onto their lowercase status. `tix` never rewrites
+an alias — toggling `d` on a `merged` ticket flips it to `open` like any done
+ticket.
+
 `tix` itself is a **pure reader** — it never writes `status:` for you. If you
 want statuses derived from external signals, wire your own reconciler via the
 `TIX_PRELOAD_HOOK` env var; it runs once before each TUI launch. A reference
