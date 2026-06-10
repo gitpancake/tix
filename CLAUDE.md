@@ -83,5 +83,5 @@ pytest -q
 - No remote sync.
 - No mouse support.
 - No realtime collab.
-- No bundled markdown renderer — defer to `glow` / `$PAGER`.
+- No bundled markdown renderer — full rendering defers to `glow` / `$PAGER`. The preview pane does line-level decoration only (`preview_lines`: headings, `•` bullets, backtick-span coloring, reflow + wrap) — no parser, don't grow it into one. `Enter` pipes `reflow_markdown` output to glow at terminal width because glamour preserves source newlines and hard-wrapped briefs render ragged otherwise.
 - No bundled status reconciler — defer to `TIX_PRELOAD_HOOK`.

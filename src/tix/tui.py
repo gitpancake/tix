@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -501,16 +502,114 @@ def group_sort_key(name):
     return (name.startswith("_"), name.lower())
 
 
+MD_LIST_RE = re.compile(r"^(\s*)(?:([-*+])|(\d+[.)]))\s+")
+MD_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+MD_BREAK_RE = re.compile(r"(-{3,}|\*{3,}|_{3,})")
+
+
+def reflow_markdown(text):
+    """Join soft-wrapped lines inside paragraphs and list items.
+
+    Glamour (glow's renderer) keeps source newlines, so a brief hard-wrapped
+    at one width re-wraps ragged at any other. Frontmatter, code fences,
+    headings, quotes, tables, and blank lines pass through untouched."""
+    out = []
+    buf = []
+
+    def flush():
+        if buf:
+            out.append(" ".join(buf))
+            buf.clear()
+
+    lines = text.splitlines()
+    in_front = bool(lines) and lines[0].rstrip() == "---"
+    in_fence = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if in_front:
+            out.append(line)
+            if i > 0 and stripped == "---":
+                in_front = False
+            continue
+        if MD_FENCE_RE.match(line):
+            flush()
+            in_fence = not in_fence
+            out.append(line)
+            continue
+        if in_fence:
+            out.append(line)
+            continue
+        is_block = (not stripped
+                    or stripped.startswith(("#", ">", "|"))
+                    or MD_BREAK_RE.fullmatch(stripped))
+        if is_block:
+            flush()
+            out.append(line)
+            continue
+        if MD_LIST_RE.match(line):
+            flush()
+            buf.append(line.rstrip())
+            continue
+        buf.append(stripped if buf else line.rstrip())
+    flush()
+    return "\n".join(out) + "\n"
+
+
+def preview_lines(body, width):
+    """Body markdown → (kind, text) display rows wrapped to `width`.
+
+    kind ∈ {"heading", "code", "text"}. Inline `code` spans keep their
+    backticks — the draw side colors them in place, so wrapping stays a
+    plain-text problem here."""
+    rows = []
+    in_fence = False
+    for line in reflow_markdown(body).splitlines():
+        stripped = line.strip()
+        if MD_FENCE_RE.match(line):
+            in_fence = not in_fence
+            rows.append(("code", line[:width]))
+            continue
+        if in_fence:
+            rows.append(("code", line[:width]))
+            continue
+        if stripped.startswith("#"):
+            rows.append(("heading", stripped.lstrip("#").strip()[:width]))
+            continue
+        if not stripped:
+            rows.append(("text", ""))
+            continue
+        bullet = MD_LIST_RE.match(line)
+        if bullet and bullet.group(2):
+            line = f"{bullet.group(1)}• {line[bullet.end():]}"
+        indent = " " * (len(bullet.group(1)) + 2 if bullet else 0)
+        for chunk in textwrap.wrap(line, width=max(8, width),
+                                   subsequent_indent=indent):
+            rows.append(("text", chunk))
+    return rows
+
+
 def open_in_pager(stdscr, path):
     """Suspend curses, open `path` in glow/$PAGER/less, restore curses.
-    Shared between default tix (Enter) and mini (Enter). Same fallback chain."""
-    pager = shutil.which("glow")
-    cmd = [pager, "-p", str(path)] if pager else \
-          [os.environ.get("PAGER", "less"), str(path)]
+    Shared between default tix (Enter) and mini (Enter). Same fallback chain.
+
+    Glow gets reflowed markdown on stdin, word-wrapped at the live terminal
+    width — overrides any narrower `width:` in glow.yml, which otherwise
+    re-wraps hard-wrapped briefs into orphan fragments."""
+    glow = shutil.which("glow")
+    width = min(max(shutil.get_terminal_size().columns, 40), 120)
     curses.def_prog_mode()
     curses.endwin()
     try:
-        subprocess.run(cmd)
+        if glow:
+            try:
+                text = reflow_markdown(
+                    Path(path).read_text(encoding="utf-8", errors="replace"))
+                subprocess.run([glow, "-p", "-w", str(width), "-"],
+                               input=text.encode("utf-8"))
+            except OSError:
+                subprocess.run([glow, "-p", "-w", str(width), str(path)])
+        else:
+            subprocess.run([os.environ.get("PAGER", "less"), str(path)])
     except (OSError, subprocess.SubprocessError):
         pass
     curses.reset_prog_mode()
@@ -684,6 +783,7 @@ class App:
             "muted": curses.COLOR_WHITE,
             "group": curses.COLOR_WHITE,
             "accent": curses.COLOR_CYAN,
+            "code": curses.COLOR_RED,
             "p0": curses.COLOR_RED,
             "p1": curses.COLOR_YELLOW,
             "p2": curses.COLOR_CYAN,
@@ -835,12 +935,38 @@ class App:
             return
         # Visual gap before body.
         y += 1
-        body_lines = t.body().splitlines() or ["(empty)"]
-        for raw in body_lines:
+        body_rows = preview_lines(t.body(), w) or [("text", "(empty)")]
+        code_attr = self.attr("code")
+        in_span = False
+        for kind, text in body_rows:
             if y - y0 >= h:
                 break
-            self._put(stdscr, y, x0, raw[:w], maxx=x0 + w)
+            if kind == "heading":
+                self._put(stdscr, y, x0, text, self.attr("accent", curses.A_BOLD),
+                          maxx=x0 + w)
+            elif kind == "code":
+                self._put(stdscr, y, x0, text, code_attr, maxx=x0 + w)
+            else:
+                in_span = self._put_spans(stdscr, y, x0, text, w,
+                                          code_attr, in_span)
             y += 1
+
+    def _put_spans(self, stdscr, y, x0, text, w, code_attr, in_span):
+        """Draw a text row, coloring `inline code` spans (backticks kept so
+        column math stays trivial). Returns span parity at end of row — a
+        span wrapped mid-line keeps its color on the next row."""
+        x = x0
+        limit = x0 + w
+        for i, seg in enumerate(text.split("`")):
+            if i:
+                self._put(stdscr, y, x, "`", code_attr, maxx=limit)
+                x += 1
+                in_span = not in_span
+            if seg:
+                self._put(stdscr, y, x, seg,
+                          code_attr if in_span else 0, maxx=limit)
+                x += len(seg)
+        return in_span
 
     def draw_header(self, stdscr, w):
         x = 0

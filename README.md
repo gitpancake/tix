@@ -175,7 +175,7 @@ A reference implementation (filesystem + git + `gh`) lives in [gitpancake/.dotfi
 ## Optional integrations
 
 - **`wt`** — if a `wt` command is on PATH, the `p` key suspends curses, runs `git fetch && git checkout main && git merge --ff-only && wt <slug>`, then resumes.
-- **`glow`** — preferred markdown pager for ticket preview. Falls back to `$PAGER` (default `less`).
+- **`glow`** — preferred markdown pager for ticket preview. tix reflows hard-wrapped briefs and pipes them to glow word-wrapped at the terminal width, so authored line width never causes ragged re-wrapping. Falls back to `$PAGER` (default `less`).
 - **`gh`** — used by some preload hooks (not by tix itself).
 
 ## Non-goals
