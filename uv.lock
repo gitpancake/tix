@@ -161,7 +161,7 @@ wheels = [
 
 [[package]]
 name = "tix-cli"
-version = "0.3.11"
+version = "0.3.12"
 source = { editable = "." }
 
 [package.dev-dependencies]

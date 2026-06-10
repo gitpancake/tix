@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.12] — 2026-06-09
+
+### Changed
+- Mini reader reworked around epic grouping: epic children now render
+  indented directly under their epic row instead of carrying a `↳` marker
+  in a flat list. Done children stay visible while any sibling is
+  unfinished; once every child is done/cancelled the whole group — header
+  included — drops. Cancelled children never render.
+- Mini sort is `created` desc throughout. In-flight tickets
+  (`active`/`review`) sit above a dim rule divider, everything else below;
+  the divider only appears when both sections are non-empty, and cursor
+  navigation skips it. Epic groups anchor at their newest displayed member
+  and join the in-flight section when any member is in-flight.
+- Mini's right column shows the `created:` datetime (`MM/DD HH:MM`) instead
+  of relative age.
+
+### Added
+- `dev` dependency group (pytest) so `uv sync` keeps the test runner.
+
 ## [0.3.11] — 2026-06-09
 
 ### Added
