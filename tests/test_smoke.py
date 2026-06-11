@@ -66,6 +66,37 @@ def test_ticket_label_round_trip_and_search(monkeypatch, tmp_path):
     assert "label:" not in brief.read_text(encoding="utf-8")
 
 
+def test_handoff_sidecar_is_not_a_ticket_and_flags_owner(monkeypatch, tmp_path):
+    tree = tmp_path / "tickets"
+    (tree / "platform" / "some-epic").mkdir(parents=True)
+    brief = tree / "platform" / "some-epic" / "01-child.md"
+    brief.write_text(
+        "---\nstatus: active\nepic: some-epic\norder: 01\ncreated: 2026-01-01T00:00:00Z\n---\n# child\n",
+        encoding="utf-8",
+    )
+    (tree / "platform" / "some-epic" / "01-child.handoff.md").write_text(
+        "# Handoff — resume doc\n", encoding="utf-8",
+    )
+    (tree / "platform" / "plain.md").write_text(
+        "---\nstatus: open\ncreated: 2026-01-02T00:00:00Z\n---\n# plain\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TICKETS_DIR", str(tree))
+    monkeypatch.delenv("TIX_EXTRA_TICKETS_DIRS", raising=False)
+    for mod in ("tix.tui", "tix"):
+        sys.modules.pop(mod, None)
+
+    from tix import tui
+    tickets = tui.load_tickets()
+    slugs = {ticket.slug for ticket in tickets}
+    assert "01-child.handoff" not in slugs
+    assert {"01-child", "plain"} == slugs
+    by_slug = {ticket.slug: ticket for ticket in tickets}
+    assert by_slug["01-child"].handoff_path is not None
+    assert by_slug["01-child"].handoff_path.name == "01-child.handoff.md"
+    assert by_slug["plain"].handoff_path is None
+
+
 def test_tui_loads_extra_ticket_dirs(monkeypatch, tmp_path):
     primary = tmp_path / "primary"
     extra = tmp_path / "extra"

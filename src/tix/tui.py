@@ -209,6 +209,7 @@ TICKET ACTIONS
   l              set/clear label (type label, ⏎ save, blank clears)
   m              move ticket to a different area (numeric pick)
   o              open the ticket's URL (legacy linear: field)
+  H              open the ticket's handoff sidecar in glow (⤳ marker)
   r              force reload (also auto-reloads every 2s on tickets-dir change)
   ?              this help
   q / esc        quit
@@ -452,6 +453,10 @@ class Ticket:
         self.title = clean_title(fm.get("title", self.slug), self.slug)
         self.group = path.parent.name
         self.created = parse_created(fm, path)
+        # Handoff sidecar (`<brief>.handoff.md`) — present when a lane parked
+        # mid-flight and wrote a resume doc next to the brief.
+        handoff = path.with_name(path.stem + ".handoff.md")
+        self.handoff_path = handoff if handoff.is_file() else None
 
     @property
     def meta(self):
@@ -487,6 +492,11 @@ def load_tickets():
                 continue
             # Skip other _*.md meta files, but keep _epic.md (the epic PRD).
             if path.name.startswith("_") and path.name != "_epic.md":
+                continue
+            # Handoff sidecars (`<brief>.handoff.md`, written by /handoff +
+            # lane-handoff.sh) are lane state riding along with their brief,
+            # not tickets — surfaced as a marker on the owning ticket instead.
+            if path.name.endswith(".handoff.md"):
                 continue
             if is_tombstone(path):
                 continue
@@ -891,6 +901,8 @@ class App:
         if created_iso:
             age = relative_age(t.created)
             kv.append(("created", f"{created_iso} ({age} ago)" if age else created_iso))
+        if t.handoff_path:
+            kv.append(("handoff", f"{t.handoff_path.name} (H to open)"))
         for key, val in kv:
             if y - y0 >= h:
                 break
@@ -1023,6 +1035,9 @@ class App:
             label_tag = ""
             label_x = age_x
         avail = max(0, label_x - title_x - 1)
+        title_text = t.title[:avail]
+        handoff_x = title_x + len(title_text) + 1
+        show_handoff = t.handoff_path and handoff_x < label_x - 1
         if selected:
             self._put(stdscr, y, 0, " " * (w - 1), curses.A_REVERSE, maxx=w)
             base = curses.A_REVERSE
@@ -1030,7 +1045,9 @@ class App:
             self._put(stdscr, y, 4, f"{prio_tag:<2}",
                       base | curses.A_BOLD, maxx=w)
             self._put(stdscr, y, 7, id_col, base | curses.A_BOLD, maxx=w)
-            self._put(stdscr, y, title_x, t.title[:avail], base, maxx=w)
+            self._put(stdscr, y, title_x, title_text, base, maxx=w)
+            if show_handoff:
+                self._put(stdscr, y, handoff_x, "⤳", base | curses.A_DIM, maxx=w)
             if label_tag:
                 self._put(stdscr, y, label_x, label_tag, base | curses.A_DIM, maxx=w)
             self._put(stdscr, y, age_x, age_pad, base | curses.A_DIM, maxx=w)
@@ -1041,7 +1058,10 @@ class App:
             self._put(stdscr, y, 4, f"{prio_tag:<2}",
                       self.attr(prio_color, curses.A_BOLD), maxx=w)
             self._put(stdscr, y, 7, id_col, curses.A_DIM, maxx=w)
-            self._put(stdscr, y, title_x, t.title[:avail], maxx=w)
+            self._put(stdscr, y, title_x, title_text, maxx=w)
+            if show_handoff:
+                self._put(stdscr, y, handoff_x, "⤳",
+                          self.attr("accent", curses.A_DIM), maxx=w)
             if label_tag:
                 self._put(stdscr, y, label_x, label_tag,
                           self.attr("accent", curses.A_DIM), maxx=w)
@@ -1506,6 +1526,10 @@ class App:
                 row = self.current()
                 if row and row["type"] == "ticket":
                     self.open_url(row["ticket"])
+            elif ch == ord("H"):
+                row = self.current()
+                if row and row["type"] == "ticket" and row["ticket"].handoff_path:
+                    open_in_pager(stdscr, row["ticket"].handoff_path)
             elif ch == ord("r"):
                 self.reload()
             elif ch == ord("p"):

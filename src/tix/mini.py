@@ -281,6 +281,9 @@ def _draw(stdscr, rows, sel, top, colors):
         title_w = max(0, label_x - title_x - 1)
         sel_attr = curses.A_REVERSE if idx == sel else 0
         title_attr = sel_attr | color_attr | (curses.A_BOLD if t.is_epic else 0)
+        title_text = t.title[:title_w]
+        handoff_x = title_x + len(title_text) + 1
+        show_handoff = t.handoff_path and handoff_x < label_x - 1
         try:
             if idx == sel:
                 stdscr.addstr(i, 0, " " * (w - 1), sel_attr)
@@ -288,7 +291,10 @@ def _draw(stdscr, rows, sel, top, colors):
             if order:
                 stdscr.addstr(i, indent + 2, order,
                               sel_attr | colors.get("muted", 0) | curses.A_DIM)
-            stdscr.addstr(i, title_x, t.title[:title_w], title_attr)
+            stdscr.addstr(i, title_x, title_text, title_attr)
+            if show_handoff:
+                stdscr.addstr(i, handoff_x, "⤳",
+                              sel_attr | colors.get("accent", 0) | curses.A_DIM)
             if label_tag:
                 stdscr.addstr(
                     i, label_x, label_tag,
