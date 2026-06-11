@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.17] — 2026-06-11
+
+### Fixed
+- Handoff sidecars (`<brief>.handoff.md`, written by lane handoffs next to
+  the brief) were parsed as frontmatter-less tickets and rendered as muted
+  junk rows inside their epic group, in both the full TUI and `tix --mini`.
+  They are now excluded from discovery; the owning ticket shows a dim `⤳`
+  marker after its title in both readers, the preview pane lists the
+  sidecar, and `H` opens it in glow/$PAGER.
+
 ## [0.3.16] — 2026-06-10
 
 ### Changed
