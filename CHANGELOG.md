@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.18] — 2026-06-15
+
+### Fixed
+- `p` (pickup) on an epic is now refused in both the full TUI and `tix
+  --mini`. Previously it treated the `_epic.md` row like any ticket and
+  spawned a single `wt` lane on the *epic folder slug* (after writing
+  `status: active` onto the epic), which is never what you want — epics are
+  picked up child-by-child. It now prints a short refusal and returns
+  without writing status or launching a lane. (`m`/move already refused
+  epics; `p` had no such guard.)
+
 ## [0.3.17] — 2026-06-11
 
 ### Fixed
