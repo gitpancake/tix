@@ -332,6 +332,31 @@ def test_pager_and_pickup_helpers_exposed():
     assert callable(getattr(tui, "pickup_ticket", None))
 
 
+def test_pickup_refuses_epic(monkeypatch, tmp_path, capfd):
+    """`p` on an epic must refuse — it would spawn a single lane on the epic
+    folder slug. It never writes `active`, never calls `wt`."""
+    from types import SimpleNamespace
+
+    from tix import tui
+
+    monkeypatch.setattr(tui.curses, "def_prog_mode", lambda: None)
+    monkeypatch.setattr(tui.curses, "endwin", lambda: None)
+    monkeypatch.setattr(tui.curses, "reset_prog_mode", lambda: None)
+    monkeypatch.setattr("builtins.input", lambda *a: "")
+
+    spawned = []
+    monkeypatch.setattr(tui.subprocess, "run", lambda *a, **k: spawned.append(a))
+    wrote = []
+    monkeypatch.setattr(tui, "write_status", lambda *a: wrote.append(a))
+
+    epic = SimpleNamespace(is_epic=True, slug="my-epic", path=tmp_path / "_epic.md")
+    tui.pickup_ticket(None, epic)
+
+    assert spawned == []
+    assert wrote == []
+    assert "is an epic" in capfd.readouterr().out
+
+
 def test_pickup_git_sync_skips_unborn_repo(monkeypatch, tmp_path, capfd):
     from tix import tui
 

@@ -197,6 +197,7 @@ FILTER + SEARCH
 
 TICKET ACTIONS
   p              pickup → mark active + wt <slug> (agent per TIX_PICKUP_AGENTS)
+                 refused on an epic — pick up its children individually
                  (suspend curses, run, return)
   e              edit brief in $EDITOR; reload after
   R              rescope → $EDITOR scratch → claude "/rescope <slug> <text>"
@@ -662,18 +663,26 @@ def pickup_ticket(stdscr, ticket):
     curses.def_prog_mode()
     curses.endwin()
     try:
-        in_repo = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True,
-        )
-        if in_repo.returncode != 0:
-            print("tix: cwd is not a git repo — run tix from a repo root.")
+        if ticket.is_epic:
+            print(
+                f"tix: '{ticket.slug}' is an epic — pick up its children "
+                "individually, not the epic folder.\n"
+                "(`p` would spawn a single lane on the epic slug.)"
+            )
             input("press enter to return…")
         else:
-            write_status(ticket.path, "active")
-            ticket.status = "active"
-            run_pickup_git_sync()
-            subprocess.run([wt, ticket.slug], env=pickup_env(ticket))
+            in_repo = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True,
+            )
+            if in_repo.returncode != 0:
+                print("tix: cwd is not a git repo — run tix from a repo root.")
+                input("press enter to return…")
+            else:
+                write_status(ticket.path, "active")
+                ticket.status = "active"
+                run_pickup_git_sync()
+                subprocess.run([wt, ticket.slug], env=pickup_env(ticket))
     except (OSError, subprocess.SubprocessError):
         pass
     curses.reset_prog_mode()
