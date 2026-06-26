@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.19] — 2026-06-26
+
+### Added
+- `b` toggles `draft ↔ open` in both the full TUI and `tix --mini`. This is
+  the only keyboard route into the backlog states, and it pulls any blank or
+  off-vocab `status:` straight to `draft` — so junk-status tickets can be
+  normalized without hand-editing frontmatter.
+- A synthetic `other` filter chip: `filter_chip()` folds any blank or
+  unrecognized `status:` onto it, so off-vocab tickets stay findable instead
+  of only ever showing under `All`. (`other` is deliberately absent from
+  `STATUS_META` — that absence is what makes it the render fallback.)
+
+### Changed
+- Off-vocab / blank-status tickets now render a `?` icon (was an
+  indistinguishable muted `·`), flagging them for triage.
+
 ## [0.3.18] — 2026-06-15
 
 ### Fixed
