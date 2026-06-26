@@ -28,6 +28,8 @@
 
 Pre-migration title-case variants (`In Progress`, `Todo`, etc.) are kept as read-only aliases — don't extend that set.
 
+`other` is a **synthetic filter chip, not a status** — `filter_chip()` folds any blank/off-vocab `status:` onto it so junk-status tickets stay findable instead of hiding under `All`. It's deliberately absent from `STATUS_META` (that absence is what makes it the fallback, rendered `?` via `DEFAULT_STATUS_META`) — don't add a `STATUS_META["other"]` entry. The `b` key toggles `draft`↔`open`, the only keyboard route into the backlog states and the way to normalize an `other` ticket.
+
 ## TICKETS_DIR resolution
 
 Order: `$TICKETS_DIR` (explicit) → `~/.pi/agent/tickets` (fallback). If `$TICKETS_DIR` names a project under `~/.pi/agent/tickets/<project>` or `~/.claude/tickets/<project>`, `__main__.py` adds the matching other-side project root as `TIX_EXTRA_TICKETS_DIRS` before importing the TUI. No broader in-binary project autodiscovery from cwd.

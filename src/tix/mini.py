@@ -159,6 +159,8 @@ def _toggle_status(ticket, ch):
     cur = ticket.status
     if ch == ord("i"):
         new = "open" if cur.lower() == "active" else "active"
+    elif ch == ord("b"):
+        new = "open" if cur.lower() == "draft" else "draft"
     elif ch == ord("d"):
         new = "open" if cur.lower() in DONE_STATUSES else "done"
     else:  # ord("x")
@@ -311,7 +313,7 @@ def _draw(stdscr, rows, sel, top, colors):
     if h >= 1:
         has_sel = rows and not _is_filler(rows[sel])
         agent = pickup_agent_label(rows[sel].path) if has_sel else "pi"
-        hint = f"↑↓ ⏎ · p pickup→{agent} · l label · i/d/x status · q quit"
+        hint = f"↑↓ ⏎ · p pickup→{agent} · l label · i/b/d/x status · q quit"
         try:
             stdscr.addstr(h - 1, 0, hint[: max(0, w - 1)], curses.A_DIM)
         except curses.error:
@@ -427,7 +429,7 @@ def _run(stdscr):
         elif ch == ord("l"):
             label_ticket = rows[sel]
             label_buffer = label_ticket.label
-        elif ch in (ord("i"), ord("d"), ord("x")):
+        elif ch in (ord("i"), ord("b"), ord("d"), ord("x")):
             ticket = rows[sel]
             _toggle_status(ticket, ch)
             dir_sig = dir_signature()

@@ -72,6 +72,7 @@ on a single line.
 ### Status vocab
 
 - `draft` — scoped, not yet refined. The cheapest possible "I might want this."
+  Toggle it with `tix`'s `b` key (`draft` ↔ `open`).
 - `open` — refined and ready to be picked up. Default for new well-formed tickets.
 - `active` — being worked. A reconciler can derive this from live worktrees or
   branches; you can also pin it manually with `tix`'s `i` key.
@@ -87,6 +88,11 @@ and PR tooling write it); the pre-migration title-case variants (`Done`,
 `Canceled`, …) likewise fold onto their lowercase status. `tix` never rewrites
 an alias — toggling `d` on a `merged` ticket flips it to `open` like any done
 ticket.
+
+Off-vocab safety net: a blank `status:` or any value outside this vocab renders
+with a `?` icon and folds onto the `other` filter chip, so junk-status tickets
+stay findable instead of hiding under `All`. Normalize one in place with
+`b`/`i`/`d`/`x` — no need to hand-edit frontmatter.
 
 `tix` itself is a **pure reader** — it never writes `status:` for you. If you
 want statuses derived from external signals, wire your own reconciler via the

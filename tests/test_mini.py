@@ -100,6 +100,24 @@ def test_build_rows_filters_case_insensitive(monkeypatch, tmp_path):
     assert _slugs(mini, rows) == ["BACKLOG", "keep"]
 
 
+def test_toggle_status_draft_and_off_vocab(monkeypatch, tmp_path):
+    """Mini's `b` flips draft ↔ open and normalizes an off-vocab status into
+    `draft`, mirroring the full TUI's sticky toggle."""
+    tree = tmp_path / "tickets"
+    _write(tree, "area/weird.md", "blocked", "2026-05-01T00:00:00Z")
+    mini, rows = _load(monkeypatch, tree)
+    from tix import tui
+
+    weird = next(t for t in tui.load_tickets() if t.slug == "weird")
+    assert weird.meta[0] == "?"
+
+    mini._toggle_status(weird, ord("b"))
+    assert "status: draft" in (tree / "area" / "weird.md").read_text()
+
+    mini._toggle_status(weird, ord("b"))
+    assert "status: open" in (tree / "area" / "weird.md").read_text()
+
+
 def test_build_rows_groups_children_under_epic(monkeypatch, tmp_path):
     """A running epic groups: epic row leads, children follow indented
     (`is_epic_child`) in `NN-` prefix order — even when created stamps run
