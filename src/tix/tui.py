@@ -129,9 +129,13 @@ STATUS_META = {
     "Canceled":    ("✕", "muted", 5),
     "Cancelled":   ("✕", "muted", 5),
 }
-DEFAULT_STATUS_META = ("·", "muted", 9)
+DEFAULT_STATUS_META = ("?", "muted", 9)
+# Synthetic chip for tickets whose `status:` is blank or off-vocab — they'd
+# otherwise only ever surface under `All` and read as inert white rows. `?` +
+# this chip flag them as needing triage; `b`/`i`/`d`/`x` normalize them.
+OTHER_CHIP = "other"
 FILTER_ORDER = ["active", "review", "open", "draft", "done", "cancelled",
-                "In Progress", "In Review", "Todo", "Backlog"]
+                OTHER_CHIP, "In Progress", "In Review", "Todo", "Backlog"]
 CANCELLED_STATUSES = {"cancelled", "canceled", "Cancelled", "Canceled"}
 # Read-only done aliases (lowercase compare) — reconcilers/PR tooling may
 # write `merged`; tix treats it as `done` everywhere but never rewrites it.
@@ -141,11 +145,14 @@ DONE_STATUSES = {"done", "merged"}
 def filter_chip(status):
     """Fold status aliases onto their canonical filter chip so done-ish
     (`merged`, `Done`) and cancelled-ish (`canceled`, `Cancelled`) tickets
-    ride the `done`/`cancelled` chips instead of vanishing."""
+    ride the `done`/`cancelled` chips instead of vanishing. Blank or off-vocab
+    statuses fold onto `other` so they're filterable, not stranded under `All`."""
     if status.lower() in DONE_STATUSES:
         return "done"
     if status in CANCELLED_STATUSES:
         return "cancelled"
+    if status not in STATUS_META:
+        return OTHER_CHIP
     return status
 
 # Split-pane thresholds. Below the combined minimum, preview is hidden and
@@ -205,6 +212,7 @@ TICKET ACTIONS
   N              new from clipboard (pbpaste) → $EDITOR → claude "/scope"
   +/= / -        raise / lower priority (P0..P3, blank); writes frontmatter
   i              toggle in-progress (sticky: pins `active` without a lane)
+  b              toggle draft  (draft ↔ open; normalizes off-vocab statuses)
   d              toggle done   (sticky: trumps reconciler)
   x              toggle cancel (sticky terminal; ticket hides from default views)
   l              set/clear label (type label, ⏎ save, blank clears)
@@ -219,14 +227,17 @@ HIDE RULES
   cancelled  hidden everywhere except `cancelled` chip
   done       hidden everywhere except `done` chip
   merged     read-only alias of done — same icon, same hiding, same chip
-  All chip shows every in-flight state (active / review / open; legacy draft).
+  other      blank / off-vocab status; `?` icon, rides the `other` chip
+  All chip shows every in-flight state (active / review / open / draft / other).
 
 STATUS LIFECYCLE
-  open → birth state; /scope plants it (draft is retired)
+  draft → backlog state; sticky `b` mark (draft ↔ open)
+  open → ready to pick up; /scope plants it
   active → derived from live worktree / branch, OR sticky `i` mark in tix
   review → derived from an open, unmerged PR for the slug's branch
   done → derived from merged PR OR sticky `d` mark in tix
   cancelled → sticky `x` mark; trumps every derived signal
+  other → blank or unrecognized status; normalize with b / i / d / x
 
 The reconciler runs on every tix launch (background) + every `wt` spawn.
 """
@@ -1125,7 +1136,7 @@ class App:
             return
         sort_label = SORT_LABELS.get(self.sort_mode, self.sort_mode)
         hints = (f"⏎ open · p pickup · e edit · R rescope · n new · l label · m move · "
-                 f"+/− prio · i wip · d done · x cancel · s sort({sort_label}) "
+                 f"+/− prio · i wip · b draft · d done · x cancel · s sort({sort_label}) "
                  f"· ? help · q quit")
         if self.query:
             hints = f"filter:/{self.query}   " + hints
@@ -1401,6 +1412,17 @@ class App:
         self.rebuild()
         self.reselect_path(path)
 
+    def toggle_draft(self, ticket):
+        """Flip draft ↔ open in place. The only keyboard route into the
+        backlog states — lets an off-vocab or blank `status:` be normalized to
+        a clean `draft`/`open` without hand-editing frontmatter."""
+        new_status = "open" if ticket.status.lower() == "draft" else "draft"
+        write_status(ticket.path, new_status)
+        ticket.status = new_status
+        path = ticket.path
+        self.rebuild()
+        self.reselect_path(path)
+
     def set_label(self, ticket, label):
         label = label.strip()
         write_label(ticket.path, label)
@@ -1577,6 +1599,10 @@ class App:
                 row = self.current()
                 if row and row["type"] == "ticket":
                     self.toggle_inprogress(row["ticket"])
+            elif ch == ord("b"):
+                row = self.current()
+                if row and row["type"] == "ticket":
+                    self.toggle_draft(row["ticket"])
             elif ch == ord("l"):
                 row = self.current()
                 if row and row["type"] == "ticket":

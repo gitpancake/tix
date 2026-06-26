@@ -258,6 +258,66 @@ def test_merged_is_done_alias(monkeypatch, tmp_path):
     assert "status: open" in text
 
 
+def test_off_vocab_status_folds_onto_other_chip(monkeypatch, tmp_path):
+    """A blank or unrecognized `status:` rides the `other` filter chip instead
+    of only ever showing under `All`, and renders with the `?` default icon."""
+    tree = tmp_path / "tickets"
+    (tree / "integrations").mkdir(parents=True)
+    (tree / "integrations" / "weird.md").write_text(
+        "---\nstatus: blocked\ncreated: 2026-01-01T00:00:00Z\n---\n# weird\n",
+        encoding="utf-8",
+    )
+    (tree / "integrations" / "blank.md").write_text(
+        "---\ncreated: 2026-01-01T00:00:00Z\n---\n# blank\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TICKETS_DIR", str(tree))
+    for mod in ("tix.tui", "tix"):
+        sys.modules.pop(mod, None)
+
+    from tix import tui
+    assert tui.filter_chip("blocked") == "other"
+    assert tui.filter_chip("") == "other"
+    assert tui.filter_chip("active") == "active"
+    assert tui.filter_chip("In Progress") == "In Progress"
+
+    app = tui.App()
+    assert "other" in app.filters
+
+    weird = next(t for t in app.tickets if t.slug == "weird")
+    assert weird.meta[0] == "?"
+
+    app.filter_idx = app.filters.index("other")
+    app.rebuild_rows()
+    visible = {row["ticket"].slug for row in app.rows if row["type"] == "ticket"}
+    assert visible == {"weird", "blank"}
+
+
+def test_toggle_draft_normalizes_off_vocab_status(monkeypatch, tmp_path):
+    """`b` flips draft ↔ open, and pulls an off-vocab status into `draft` so a
+    junk-status ticket can be normalized from the keyboard."""
+    tree = tmp_path / "tickets"
+    (tree / "integrations").mkdir(parents=True)
+    brief = tree / "integrations" / "weird.md"
+    brief.write_text(
+        "---\nstatus: blocked\ncreated: 2026-01-01T00:00:00Z\n---\n# weird\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TICKETS_DIR", str(tree))
+    for mod in ("tix.tui", "tix"):
+        sys.modules.pop(mod, None)
+
+    from tix import tui
+    app = tui.App()
+    weird = next(t for t in app.tickets if t.slug == "weird")
+
+    app.toggle_draft(weird)
+    assert "status: draft" in brief.read_text(encoding="utf-8")
+
+    app.toggle_draft(weird)
+    assert "status: open" in brief.read_text(encoding="utf-8")
+
+
 def test_resolve_project_chdirs_into_code_repo(monkeypatch, tmp_path):
     """`tix <project>` points TICKETS_DIR at the centralized tree and chdirs
     into the code repo under $TIX_CODE_DIR so pickup runs against it."""
